@@ -29,7 +29,7 @@
 |---|---|---|
 | 1 | 老用户「内置 dsh」→ `core/snapshots` 迁移 | **已完成**（`src/main/migrate.js`，见第 2.6 节） |
 | 2 | `electron-updater` 自动更新 UI | **部分**：主进程链路已通（第 5 节）；渲染层 UI 未做，暂用菜单「帮助 → 检查应用更新…」的原生对话框 |
-| 3 | 真机出包验证 NSIS（自选路径 / Geek 识别 / 卸载清场） | **待做**：必须在 Windows + Node 24 上跑 `npm run dist:win` |
+| 3 | 真机出包验证 NSIS（自选路径 / Geek 识别 / 卸载清场） | **已完成**：`npm run dist:win` 在 Windows + **portable Node 24.21** 上跑通，产出 `DSH-Desktop-Setup-0.1.0.exe`(NSIS) + `DSH-Desktop-0.1.0-portable.exe`，且 `node-pty` 在打包后的 `app.asar.unpacked` 中实测可启 PTY（见第 2.6 节补充）。系统自带的 Node 22 不够用，构建机须自备 Node 24（见第 2 节） |
 
 ### 接手必读：六条不变量
 
@@ -221,6 +221,27 @@ npm install            # 含 node-pty 本地编译；.npmrc 已走国内镜像
 npm run seed:core -- 0.1.5-rc.1   # 可选：预置内核，免得首次启动再下载
 npm run dist:win
 ```
+
+> **构建机没有 Node 24 怎么办（已踩坑）**
+> 系统自带的 Node 22 跑不动（`import.meta.main` 静默退出）。不要去动系统 Node，
+> 下载一份 **portable Node 24** 到工程目录之外即可，例如 `tools\node24\`：
+>
+> ```powershell
+> # 用 portable node 的 npm 跑安装与出包，完全不碰系统 Node
+> $N = 'X:\path\to\tools\node24\node.exe'
+> & $N (Join-Path (Split-Path $N) 'node_modules/npm/bin/npm-cli.js') install
+> & $N (Join-Path (Split-Path $N) 'node_modules/npm/bin/npm-cli.js') run dist:win
+> ```
+>
+> 两个环境相关的坑（本次实测）：
+> 1. **Electron 二进制下载失败** —— `@electron/get` 不读 `.npmrc` 的 `electron_mirror`，
+>    会直连 GitHub 而超时。用 `ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`
+>    环境变量，或手动把 `electron-vXX-win32-x64.zip` 解到 `node_modules/electron/dist` 并写 `path.txt=electron.exe`。
+> 2. **npm 11 的 `allowScripts` 闸门** —— 它会拦掉 `node-pty` 的安装脚本告警，但 `node-pty`
+>    的预编译产物仍能落盘、最终打包后可在 `app.asar.unpacked` 中正常加载（已实测 `cmd.exe` PTY 回显）。
+>    若哪天绑定确实缺失，手动 `node node_modules/node-pty/scripts/prebuild.js` 即可。
+>
+> 产物 `dist\` 已验证：NSIS 安装包 + 免安装版均生成，`node-pty` 在打包后真实可启终端。
 
 产物在 `dist\`：
 

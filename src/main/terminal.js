@@ -7,6 +7,9 @@
  *   pwsh.exe        PowerShell 7+      modern, cross-platform, UTF-8 friendly
  *   powershell.exe  Windows PowerShell 5.1 (built-in) legacy, OEM code page output
  *   cmd.exe         CMD                needs `chcp 65001` before UTF-8 renders
+ *   bash.exe        Git Bash / WSL     only when installed; many dev machines
+ *                                      have this and nothing else, so we must not
+ *                                      silently fall through to cmd.exe for them
  *
  * Passing PowerShell-7-only syntax into 5.1, or assuming UTF-8 from a 5.1
  * console, produces garbled Chinese text and mysterious parse errors. So we
@@ -58,6 +61,13 @@ const SHELL_CANDIDATES = isWindows
         utf8: null
       },
       {
+        id: 'bash',
+        label: 'Git Bash / WSL',
+        file: 'bash.exe',
+        args: ['--login'],
+        utf8: null // UTF-8 by default; covers both Git's bash.exe and WSL bash.exe
+      },
+      {
         id: 'cmd',
         label: 'CMD',
         file: 'cmd.exe',
@@ -91,6 +101,23 @@ function pwsh7InstallPaths() {
   return [path.join(pf, 'PowerShell', '7', 'pwsh.exe')]
 }
 
+/**
+ * Extra locations Git Bash can live in even when it is not on PATH. `bash.exe`
+ * also resolves to WSL's shim when that is set up, so either way a working bash
+ * is found. Listed explicitly so a dev box with Git Bash but no PowerShell 7
+ * does not fall through to cmd.exe.
+ */
+function gitBashPaths() {
+  if (!isWindows) return []
+  const pf = process.env.ProgramFiles || 'C:\\Program Files'
+  const local = process.env.LocalAppData || ''
+  return [
+    path.join(pf, 'Git', 'bin', 'bash.exe'),
+    path.join(pf, 'Git', 'usr', 'bin', 'bash.exe'),
+    path.join(local, 'Programs', 'Git', 'bin', 'bash.exe')
+  ].filter(Boolean)
+}
+
 /** Best-effort read of the shell version string, for display and logging. */
 function readShellVersion(candidate, exePath) {
   const probes = {
@@ -122,6 +149,9 @@ function detectShell() {
     let exePath = resolveOnPath(candidate.file)
     if (!exePath && candidate.id === 'pwsh7') {
       exePath = pwsh7InstallPaths().find((p) => fs.existsSync(p)) || null
+    }
+    if (!exePath && candidate.id === 'bash') {
+      exePath = gitBashPaths().find((p) => fs.existsSync(p)) || null
     }
     if (!exePath) continue
     return { ...candidate, exePath, version: readShellVersion(candidate, exePath) }
