@@ -63,7 +63,27 @@ const plugins = {
   list: () => ipcRenderer.invoke('plugin:list'),
   install: (name, version) => ipcRenderer.invoke('plugin:install', { name, version }),
   uninstall: (name) => ipcRenderer.invoke('plugin:uninstall', { name }),
-  setEnabled: (name, enabled) => ipcRenderer.invoke('plugin:setEnabled', { name, enabled })
+  setEnabled: (name, enabled) => ipcRenderer.invoke('plugin:setEnabled', { name, enabled }),
+
+  /** 插件商店搜索；网络失败不抛错，返回 { items: [], error }。 */
+  search: (query, size) => ipcRenderer.invoke('plugin:search', { query, size }),
+  /** 单个插件详情（含它声明依赖的内核版本 requiresKernel）。 */
+  detail: (name) => ipcRenderer.invoke('plugin:detail', { name })
+}
+
+/**
+ * 用户可配置路径（DSH_HOME / 内核目录）。
+ *
+ * 与 updater 同样的取舍：渲染层只能「提议」一个路径，能不能用完全由主进程
+ * 的 path-config 校验说了算，不合法的写入会被直接拒绝——所以这里的 set 抛错
+ * 是正常流程，UI 要把 reason 原样显示给用户，而不是当成崩溃。
+ */
+const pathConfig = {
+  get: () => ipcRenderer.invoke('pathConfig:get'),
+  validate: (kind, value) => ipcRenderer.invoke('pathConfig:validate', { kind, value }),
+  set: (kind, value) => ipcRenderer.invoke('pathConfig:set', { kind, value }),
+  /** 打开系统目录选择框；返回 null 表示用户取消，否则带一份即时校验结果。 */
+  browse: (kind) => ipcRenderer.invoke('pathConfig:browse', { kind })
 }
 
 /**
@@ -103,5 +123,6 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   updater,
   kernel,
   plugins,
+  pathConfig,
   terminal
 })

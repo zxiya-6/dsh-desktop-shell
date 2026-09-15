@@ -5,6 +5,18 @@
 
 沿用官方 Web UI（不重造界面），桌面层只负责它原本缺失的宿主能力：进程生命周期、端口与鉴权、数据持久化、终端、打包分发。
 
+## 速览
+
+| | |
+|---|---|
+| 是什么 | DeepSeek Harness 的 Windows 桌面壳：依赖内置、与系统环境隔离、自带终端 |
+| 产物 | `DSH-Desktop-Setup-0.1.0.exe`（NSIS 安装器）、`DSH-Desktop-0.1.0-portable.exe`（绿色版） |
+| 构建 | `npm install` → `npm run dist:win`（**必须 Node 24**，见第二节） |
+| 数据在哪 | `%APPDATA%\dsh-desktop\`，与安装目录无关，**卸载不丢** |
+| 源码结构 | `src/main`（主进程）、`src/preload`、`src/renderer`（加载页 / 终端 / 内核面板） |
+
+> 安装器 117 MB，超过 GitHub 单文件 100 MB 硬限制，因此**不进 git**，随 Release 附件分发。
+
 ---
 
 ## 〇、当前状态
@@ -28,8 +40,10 @@
 | # | 待办 | 状态 |
 |---|---|---|
 | 1 | 老用户「内置 dsh」→ `core/snapshots` 迁移 | **已完成**（`src/main/migrate.js`，见第 2.6 节） |
-| 2 | `electron-updater` 自动更新 UI | **部分**：主进程链路已通（第 5 节）；渲染层 UI 未做，暂用菜单「帮助 → 检查应用更新…」的原生对话框 |
+| 2 | `electron-updater` 自动更新 UI | **已完成**：主进程链路（第 5 节）+ 内核管理面板第 7 节「应用更新」（当前/最新版本、检查、下载进度条、重启并安装、更新源与「启动时自动检查」开关）。菜单「帮助 → 检查应用更新…」的原生对话框保留，作为内核起不来时的兜底。**端到端仍未真机验证**：尚未配置真实更新源（见第七节已知限制） |
 | 3 | 真机出包验证 NSIS（自选路径 / Geek 识别 / 卸载清场） | **已完成**：`npm run dist:win` 在 Windows + **portable Node 24.21** 上跑通，产出 `DSH-Desktop-Setup-0.1.0.exe`(NSIS) + `DSH-Desktop-0.1.0-portable.exe`，且 `node-pty` 在打包后的 `app.asar.unpacked` 中实测可启 PTY（见第 2.6 节补充）。系统自带的 Node 22 不够用，构建机须自备 Node 24（见第 2 节） |
+| 4 | 启动容错：三处会导致「双击后完全没有窗口」的缺陷 | **已完成**：模块级 `applyPathOverrides()` 与 `boot()` 中的 `normalizeKernelDirToCurrent()` 缺 try/catch（一抛错主进程在 `require` 阶段或 `createMainWindow()` 前就崩），窗口 `show:false` 且无 `did-fail-load` 兜底（加载失败则 `ready-to-show` 永不触发）。三处均为**纯兜底**，正常路径一行都不执行 |
+| 5 | 单实例锁跨「便携版 / 安装版」失效 | **未做**：两者 `userData` 不同，锁各管各的，可同时运行并争抢 3080 端口。已知副作用：多实例会互相挤崩内核，并在 `dsh-home/task-board/` 留下僵尸锁，导致下次启动内核报 `ledger is already owned by process <pid>`。临时处理：确认该 PID 已死后删掉 `ledger-v2.lock` |
 
 ### 接手必读：六条不变量
 
@@ -40,7 +54,7 @@
 | 1 | 内核在 `%APPDATA%\dsh-desktop\core\snapshots\<version>\`，**不在安装包** | 安装包已瘦身，`@deepseek-ai/dsh` 已移出 `dependencies` |
 | 2 | **只有新内核冒烟通过才替换当前内核**；失败则当前内核不变 + 清 `core/staging` | `kernel-package-manager.install()` 的「校验→暂存→冒烟→原子提升」链路 |
 | 3 | **绝不修改 deepseekharness 内核本身**，只做接口对接 | 内核目录只允许写 `snapshot.json` 元数据 |
-| 4 | `DSH_HOME` 必须 = `userData/dsh-home`，**不能指向内核目录** | 否则切换内核丢插件/会话/凭据 |
+| 4 | `DSH_HOME` 默认 = `userData/dsh-home`，**可配置**（见第 2.7 节），但**绝不能与内核目录互相嵌套** | 放进内核树会被「清理旧快照」连带删除；反过来则会被 dsh 当成自己的数据目录读写 |
 | 5 | Windows 限制：MAX_PATH 260、无 symlink、进程树用 `taskkill` 清 | 快照提升用 `rename` 不用 symlink；hoisted 扁平 node_modules 缩短路径 |
 | 6 | `config.json` / `plugin-manifest.json` 必须**原子写**（临时文件 + rename） | 更新中断不能让应用起不来 |
 
@@ -134,6 +148,38 @@ dsh 本体**不再打进安装包**，而是当作一个可更新的「内核」
 > ⚠️ 复制后必须校验入口文件存在，否则整份删除回滚——宁可不迁移，也不留一个启动不了的快照。
 > ⚠️ 迁移失败**不许阻断启动**：单个坏目录只记录、继续跑，整体异常被 `index.js` 吞掉。
 
+### 2.7 路径设置（DSH_HOME / 内核目录）
+
+入口：**`Ctrl + K`** 面板 → 第 8 节「路径设置」。可浏览选择，也可手填。
+
+| 配置 | 默认值 | 说明 |
+|---|---|---|
+| `paths.dshHome` | `%APPDATA%\dsh-desktop\dsh-home` | profile / 凭据 / 插件 / 会话；**留空即恢复默认** |
+| `paths.kernelDir` | `core\snapshots\<currentVersion>` | 当前使用的内核快照目录，只能选快照根内的目录 |
+
+校验规则集中在 `src/main/path-config.js`（`npm run smoke:paths`，40 项）：
+
+- 必须是绝对路径，不能是磁盘根目录；
+- 不能指向系统目录（Program Files、Windows、ProgramData 等）；
+- 两者**不能互相嵌套**——这是不变量 #4 现在唯一的表现形式；
+- 目录必须可写（不存在时要求上级目录可写）；
+- 内核目录必须真装了内核（存在 `node_modules/@deepseek-ai/dsh/lib/bin.js`）。
+
+生效方式：
+
+- 改 **DSH_HOME** → 立即重启 dsh 子进程（它是以环境变量注入的，改配置不会作用到已运行的进程），配置同时原子落盘；
+- 改 **内核目录** → 走既有的 `launcher.switchTo()` 链路，与 `Ctrl + K` 切换版本完全同一条；
+- 两者与 `config.kernel.currentVersion` **互为投影**：切版本会自动同步路径，反之亦然，不会出现两处显示不同的「当前内核」。
+
+> 写入前一律先过校验，非法值不会被采纳；启动时若发现已保存的值失效（目录被删/挪走），
+> 静默回退到默认位置并只记日志——**路径配错不该导致应用起不来**，否则用户连改回来的机会都没有。
+
+### 2.8 插件与插件商店
+
+- 插件只装到 **`<DSH_HOME>/dsh-plugins/`**：DSH_HOME 下的独立子目录，不进内核树（清理快照不会删掉插件）、不写系统目录、不修改任何环境变量或全局配置（npm/pnpm 的 prefix、cache、userconfig 全部指向 userData）。
+- **商店就是 npm registry**：dsh 插件本来就是 npm 包，安装走的也是 `pnpm add <包名>`，所以「搜得到的」和「装得上的」同源，不会出现列表里能点、一点安装却 404。
+- 元信息写在 `plugin-manifest.json`，含：`name`、`version`、`requiresKernel`（插件**声明依赖**的内核版本，依次取 `dsh.kernelVersion` → `peerDependencies["@deepseek-ai/dsh"]` → `engines.dsh`，都没写则为 null）、`kernelVersion`（**实际装在哪个内核上**，排障时的现场快照）。
+
 ### 3. 内置终端
 
 `Ctrl + \`` 打开。启动时自动注入内置环境变量，可直接执行：
@@ -174,8 +220,11 @@ src/main/app-updater.js  —— 泛型 provider + 运行时 feedURL
 - 没配 `updateUrl` 就**整体停用**；开发态也永远不自检（未打包的二进制谈更新没有意义）
 - 检查到版本后用原生对话框走「下载 → 重启安装」闭环（菜单：帮助 → 检查应用更新…），
   这条路径不依赖 dsh Web UI，内核起不来时照样能用
-- 渲染层通过 `dshDesktop.updater.*` 拿同一份状态（`app:update` 事件），
-  Web UI 里画更新提示的活儿还没做（见〇节待办 #2）
+- 渲染层通过 `dshDesktop.updater.*` 拿同一份状态（`app:update` 事件）：内核管理面板
+  （`Ctrl + K`）第 7 节「应用更新」已画出当前版本 / 最新版本 / 上次检查、检查与下载按钮、
+  下载进度条，以及更新源输入框与「启动时自动检查」开关；下载完成后同一枚按钮变为
+  「重启并安装」。未打包的开发态、未配置 `updateUrl` 时会直接显示停用原因，
+  而不是摆一个点了没反应、也不说为什么的按钮
 - 更新源**只允许 http(s)**，且只能写进 `config.json`；渲染进程不能指定自己的更新源
 
 ### 6. 文件地图
@@ -187,9 +236,11 @@ src/main/app-updater.js  —— 泛型 provider + 运行时 feedURL
 | `src/main/app-updater.js` | **新增** electron-updater 封装（泛型源、未配置即停用） |
 | `src/main/dsh-launcher.js` | 子进程生命周期：`ELECTRON_RUN_AS_NODE` + `--expose-internals` + 随机端口 + token + 就绪探测 + tree-kill |
 | `src/main/paths.js` / `layout.js` / `user-data.js` | 路径布局，pin userData 到 `%APPDATA%\dsh-desktop` |
-| `src/main/config-store.js` | `config.json` + 更新锁 + `KERNEL_MIN_NODE_MAJOR=24` + `app` 段（迁移记录 / 更新源） |
+| `src/main/config-store.js` | `config.json` + 更新锁 + `KERNEL_MIN_NODE_MAJOR=24` + `app` 段（迁移记录 / 更新源）+ `paths` 段（自定义 DSH_HOME / 内核目录） |
+| `src/main/path-config.js` | **新增** 用户可配置路径的校验：绝对路径、系统目录、两者互相嵌套、可写性、内核快照合法性（`smoke:paths`，40 项） |
+| `src/main/plugins/backup-roll/plugin-store.js` | **新增** 插件商店：npm registry 搜索 + 解析插件声明依赖的内核版本 |
 | `src/main/plugins/backup-roll/*` | `kernel-registry`(快照注册) / `kernel-package-manager`(下载编排) / `plugin-manage`(插件+回滚) / `registry-client` / `throttle-proxy`(限速) / `validate`(防注入) |
-| `src/renderer/{loading,kernel,terminal}.html` | 加载页 / 内核管理面板 / 终端 |
+| `src/renderer/{loading,kernel,terminal}.html` | 加载页 / 内核管理面板（第 7 节为桌面壳「应用更新」）/ 终端 |
 | `npmrc.sample` | **新增** `.npmrc` 的非点文件副本（`postinstall` 缺失时自动还原，防传输丢文件） |
 | `scripts/smoke-*.js` | 冒烟脚本；`smoke:migrate` 走纯 node，不需要 Electron |
 | `build/installer.nsh` | NSIS 钩子：自选路径记忆、写 InstallLocation、卸载前 taskkill、数据保留询问 |

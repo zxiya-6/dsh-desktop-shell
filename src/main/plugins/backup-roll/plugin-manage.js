@@ -27,6 +27,7 @@ const path = require('node:path')
 const { paths } = require('../../paths')
 const { runPnpm, npmrcFor } = require('./kernel-package-manager')
 const { assertPackageName, assertVersion } = require('./validate')
+const { readRequiresKernel } = require('./plugin-store')
 
 const MANIFEST_VERSION = 1
 
@@ -75,7 +76,9 @@ class PluginManager {
   constructor({ manifestFile, installDir, config, registry, proxies = {} } = {}) {
     if (!config) throw new Error('PluginManager 需要 config')
     this.manifestFile = manifestFile || paths.manifestFile()
-    this.installDir = installDir || paths.plugins()
+    // 插件只待在 DSH_HOME 下的独立目录里：既不进内核树（清理旧快照不会连带
+    // 删掉插件），也不写系统目录、不碰任何全局配置。
+    this.installDir = installDir || paths.pluginDir()
     this.config = config
     this.registry = registry
     this.proxies = proxies
@@ -175,6 +178,13 @@ class PluginManager {
       const installed = this.#readInstalledVersion(safeName)
       onProgress?.({ phase: 'done', label: `已安装 ${spec}`, percent: 100 })
 
+      // 元信息里记两个内核版本，含义不同，缺一不可：
+      //   requiresKernel —— 插件自己声明依赖哪个内核（多数插件没声明，为 null），
+      //     用来在换内核之后提示「它当初是为哪个版本写的」；
+      //   kernelVersion  —— 实际装到哪个内核上，是排障时的现场快照。
+      const requiresKernel = readRequiresKernel(this.#readInstalledPackage(safeName))
+      const kernelVersion = this.config.read().kernel.currentVersion || null
+
       this.updateManifest((m) => ({
         ...m,
         plugins: [
@@ -185,6 +195,8 @@ class PluginManager {
             builtin: false,
             enabled: true,
             version: installed || safeVersion,
+            requiresKernel,
+            kernelVersion,
             updatedAt: new Date().toISOString()
           }
         ]
@@ -253,15 +265,19 @@ class PluginManager {
 
   /* ---------------- internals ---------------- */
 
-  #readInstalledVersion(name) {
+  /** 读已装插件自己的 package.json；没装或读不到一律返回 null。 */
+  #readInstalledPackage(name) {
     try {
-      const pkg = JSON.parse(
+      return JSON.parse(
         fs.readFileSync(path.join(this.installDir, 'node_modules', name, 'package.json'), 'utf8')
       )
-      return pkg.version || null
     } catch {
       return null
     }
+  }
+
+  #readInstalledVersion(name) {
+    return this.#readInstalledPackage(name)?.version || null
   }
 
   /** Plugin channel env, incl. the throttling proxy when a cap is set. */

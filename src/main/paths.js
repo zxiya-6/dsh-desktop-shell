@@ -39,11 +39,45 @@ function userDataRoot() {
   return app.getPath('userData')
 }
 
+/**
+ * 用户覆盖的路径（来自 config.json → paths）。
+ *
+ * 之所以用模块级变量而不是每次读 config：paths 被 env / plugin-manage /
+ * kernel-package-manager 等一堆模块直接调用，让它们全都依赖 ConfigStore 会
+ * 造成一圈循环引用（config-store 不依赖 paths，但 paths 一旦依赖它就反过来了）。
+ * 改成启动时注入一次覆盖值，调用方签名完全不变。
+ *
+ * 覆盖值一律在写入前经过 path-config 校验，非法值在这里也不会被采纳。
+ */
+let overrides = { dshHome: null, kernelDir: null }
+
+/** 注入已校验的路径覆盖。传 null 表示恢复默认。 */
+function setOverrides(next = {}) {
+  overrides = {
+    dshHome: next.dshHome ? path.resolve(next.dshHome) : null,
+    kernelDir: next.kernelDir ? path.resolve(next.kernelDir) : null
+  }
+  return { ...overrides }
+}
+
+function getOverrides() {
+  return { ...overrides }
+}
+
 const paths = {
   userData: () => userDataRoot(),
 
   /** DSH_HOME — stays outside the kernel tree so switching kernels keeps data. */
-  dshHome: () => path.join(userDataRoot(), 'dsh-home'),
+  dshHome: () => overrides.dshHome || path.join(userDataRoot(), 'dsh-home'),
+
+  /**
+   * 当前使用的内核快照目录。
+   *
+   * 返回 null 表示「跟随 config.kernel.currentVersion 自动解析」，调用方需要
+   * 自行拼 snapshots/<version>。之所以不在这里拼：paths 拿不到 config，而
+   * currentVersion 又是唯一的真相源，两处拼接迟早会不一致。
+   */
+  kernelDir: () => overrides.kernelDir || null,
 
   workspace: () => path.join(userDataRoot(), 'workspace'),
 
@@ -68,6 +102,16 @@ const paths = {
   manifestFile: () => path.join(userDataRoot(), 'plugin-manifest.json'),
 
   plugins: () => path.join(userDataRoot(), 'plugins'),
+
+  /**
+   * 桌面壳自己安装的插件目录 —— DSH_HOME 下的一个独立子目录。
+   *
+   * 为什么不是 dsh 自己的 `$DSH_HOME/profiles/<name>/node_modules`：那是 dsh
+   * 插件系统的地盘，而这里的插件是桌面壳用 pnpm 单独装的，两边共用一个
+   * 目录会互相改写 package.json。放在 DSH_HOME 下则保持了「插件属于用户
+   * 数据」的语义——它跟着 DSH_HOME 走，永远不进内核树、也不碰系统目录。
+   */
+  pluginDir: () => path.join(paths.dshHome(), 'dsh-plugins'),
 
   /**
    * Built-in plugins ship inside the app and are read-only by design — the
@@ -123,6 +167,18 @@ function ensureDirectories() {
   for (const dir of layoutDirectories(userDataRoot())) {
     fs.mkdirSync(dir, { recursive: true })
   }
+  // 用户自定义的位置也要建出来：DSH_HOME 不存在时 dsh 会自行另建一套默认
+  // 结构，那就会出现「配置指向 A、数据其实落在 B」的错位。
+  if (overrides.dshHome) {
+    fs.mkdirSync(overrides.dshHome, { recursive: true })
+  }
 }
 
-module.exports = { paths, ensureDirectories, layoutFor, layoutDirectories }
+module.exports = {
+  paths,
+  ensureDirectories,
+  setOverrides,
+  getOverrides,
+  layoutFor,
+  layoutDirectories
+}

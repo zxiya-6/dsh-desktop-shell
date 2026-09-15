@@ -23,6 +23,7 @@
     "smoke:install": "electron scripts/smoke-install.js",
     "smoke:ui": "electron scripts/smoke-ui.js",
     "smoke:migrate": "node scripts/smoke-migrate.js",
+    "smoke:paths": "node scripts/smoke-paths.js",
     "dist:win": "electron-builder --win --x64",
     "dist:dir": "electron-builder --win --x64 --dir"
   },

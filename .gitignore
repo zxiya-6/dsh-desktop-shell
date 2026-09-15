@@ -3,6 +3,18 @@ node_modules/
 dist/
 build/*.exe
 *.log
+logs/
+npm-debug.log*
+yarn-error.log*
+
+# --- 构建缓存 ---
+.cache/
+.electron/
+.electron-builder/
+*.tsbuildinfo
+.eslintcache
+.parcel-cache/
+builder-debug.yml
 
 # --- App runtime artifacts (never source) ---
 core/
@@ -10,17 +22,35 @@ staging/
 .asar/
 release/
 
+# --- 产物（超过 GitHub 单文件 100MB 硬限制，走 Release 附件分发）---
+*.exe
+*.msi
+*.7z
+*.blockmap
+*.zip
+
+# --- 密钥 / 证书 / 本地凭据（敏感，绝不入库）---
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+secrets.json
+credentials*.json
+token*.json
+.env
+.env.*
+!.env.example
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db
 desktop.ini
 *.swp
+*~
 
 # --- IDE ---
 .idea/
 .vscode/*
 !.vscode/extensions.json
-
-# --- Local overrides ---
-.env
-.env.local

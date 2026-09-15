@@ -17,7 +17,8 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron')
 
-const { paths, ensureDirectories } = require('./paths')
+const { paths, ensureDirectories, setOverrides } = require('./paths')
+const { validate: validatePathConfig } = require('./path-config')
 const { DshLauncher } = require('./dsh-launcher')
 const { TerminalManager, detectShell } = require('./terminal')
 const { ConfigStore } = require('./config-store')
@@ -28,6 +29,7 @@ const { ThrottleProxy } = require('./plugins/backup-roll/throttle-proxy')
 const { assertSnapshotVersion, assertVersion } = require('./plugins/backup-roll/validate')
 const { migrateUserData } = require('./migrate')
 const { AppUpdater } = require('./app-updater')
+const { PluginStore } = require('./plugins/backup-roll/plugin-store')
 
 /**
  * Pin the userData directory name.
@@ -55,6 +57,86 @@ const dev = process.argv.includes('--dev')
  * touching the process lifecycle code that is already proven.
  */
 const config = new ConfigStore(paths.configFile(), paths.lockFile())
+
+/** 未经覆盖时的默认 DSH_HOME，与 paths.js 里的兜底保持一致。 */
+function defaultDshHome() {
+  return path.join(paths.userData(), 'dsh-home')
+}
+
+/** 当前生效的内核快照目录：用户覆盖优先，否则跟随 config.kernel.currentVersion。 */
+function currentKernelDir() {
+  const explicit = paths.kernelDir()
+  if (explicit) return explicit
+  const version = config.read().kernel.currentVersion
+  return version ? paths.snapshotDir(version) : null
+}
+
+/**
+ * 把 config.paths 里保存的自定义路径应用到 paths 模块。
+ *
+ * 必须在 registry / launcher 之前跑完：DSH_HOME 决定子进程拿到的环境变量，
+ * 内核目录决定入口解析，两者都得在任何一处路径计算之前定下来。
+ *
+ * 保存时已经校验过一次，这里再校验是防御性的——用户完全可能在应用没运行时
+ * 手改了 config.json，也可能把目录整个挪走或删掉。校验不过就静默退回默认
+ * 位置、只记日志：路径配错不该让应用起不来，否则用户连改回来的机会都没有。
+ */
+function applyPathOverrides() {
+  const saved = config.read().paths || {}
+  const base = { snapshotsDir: paths.snapshots(), stagingDir: paths.staging() }
+  const applied = { dshHome: null, kernelDir: null }
+  const warnings = []
+
+  if (saved.dshHome) {
+    const result = validatePathConfig('dshHome', saved.dshHome, base)
+    if (result.ok) applied.dshHome = result.value
+    else warnings.push(`DSH_HOME：${result.reason}`)
+  }
+  if (saved.kernelDir) {
+    const result = validatePathConfig('kernelDir', saved.kernelDir, {
+      ...base,
+      dshHome: applied.dshHome || defaultDshHome()
+    })
+    if (result.ok) applied.kernelDir = result.value
+    else warnings.push(`内核目录：${result.reason}`)
+  }
+
+  setOverrides(applied)
+  if (warnings.length) {
+    console.warn(`[paths] 自定义路径不合法，已回退为默认：${warnings.join('；')}`)
+  }
+  return { ...applied, warnings }
+}
+
+// 应用自定义路径这件事本身不许把模块加载打断：一旦这里抛出，主进程会在
+// require 阶段就崩掉，用户连窗口都看不到，更没有机会把配错的路径改回来。
+// 所以失败时静默退回默认位置——路径配错不该让应用起不来，这条原则在
+// applyPathOverrides / path-config 里已经约束过一次，这里守住最后一环。
+try {
+  applyPathOverrides()
+} catch (err) {
+  console.warn('[paths] 应用自定义路径失败，已退回默认位置：', err.message)
+  setOverrides({ dshHome: null, kernelDir: null })
+}
+
+/**
+ * 用 currentVersion 校正 kernelDir，防止两者分叉。
+ *
+ * 这两个值表达的是同一件事（「现在用哪个内核」），而 currentVersion 才是
+ * 唯一的真相源：launcher 靠它解析入口，快照回滚也靠它。kernelDir 只是它
+ * 在设置页里的路径投影。所以每次配置变动后都用 currentVersion 校正一遍，
+ * 免得有人手改 config.json 之后，设置页和内核面板显示出两个不同的「当前内核」。
+ */
+function normalizeKernelDirToCurrent() {
+  const current = config.read().kernel.currentVersion
+  const next = current ? paths.snapshotDir(current) : null
+  const applied = paths.getOverrides()
+  if (applied.kernelDir !== next) {
+    config.write({ paths: { kernelDir: next } })
+    setOverrides({ dshHome: applied.dshHome, kernelDir: next })
+  }
+}
+
 const registry = new KernelRegistry({
   snapshotsDir: paths.snapshots(),
   stagingDir: paths.staging(),
@@ -177,6 +259,13 @@ function createMainWindow() {
   loadLocalPage(mainWindow, 'loading.html')
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
+  // 兜底：窗口是 show:false，只靠 ready-to-show 才露面。加载页一旦加载失败，
+  // ready-to-show 永远不会触发，窗口就一直藏着——用户看到的就是「双击了却
+  // 什么都没发生」，且日志里没有任何线索。这里保证窗口至少会弹出来。
+  mainWindow.webContents.once('did-fail-load', (_event, code, desc, url) => {
+    console.error(`[ui] 页面加载失败：${code} ${desc} ${url || ''}`)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
+  })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -375,6 +464,14 @@ function runMigrations() {
 async function boot() {
   ensureDirectories()
   runMigrations()
+  // 迁移可能改写了 config（包括 currentVersion），所以校正要放在它之后。
+  // 校正失败同样不许阻断启动：它只是让设置页显示得更准确，窗口和内核才是
+  // 主体。否则一次写不了 config 的权限问题，就会让应用连窗口都弹不出来。
+  try {
+    normalizeKernelDirToCurrent()
+  } catch (err) {
+    console.warn('[paths] 校正内核目录失败，已按默认路径继续启动：', err.message)
+  }
   createMainWindow()
 
   // Resolve the kernel *before* booting it. Without this the user would stare
@@ -637,7 +734,125 @@ function registerIpc() {
     // probe against the filesystem. Reject it before it reaches inspect().
     const safeVersion = assertSnapshotVersion(version)
     const result = await launcher.switchTo(safeVersion)
+    // 版本切过去了，设置页那条「内核路径」也要跟着走（两者互为投影）
+    normalizeKernelDirToCurrent()
     return { ...kernelStatus(), url: result.url }
+  })
+
+  /* ---------------- 用户可配置路径（DSH_HOME / 内核目录） ---------------- */
+
+  /** 校验上下文：把「内核树」和 DSH_HOME 一起喂进去，才能判定互相嵌套。 */
+  function pathConfigContext() {
+    return {
+      snapshotsDir: paths.snapshots(),
+      stagingDir: paths.staging(),
+      dshHome: paths.dshHome(),
+      kernelDir: currentKernelDir()
+    }
+  }
+
+  /** 设置页一次拿全：当前值、默认值、是否为自定义。 */
+  function pathConfigSnapshot() {
+    const applied = paths.getOverrides()
+    const current = config.read().kernel.currentVersion
+    return {
+      dshHome: paths.dshHome(),
+      kernelDir: currentKernelDir(),
+      snapshotsDir: paths.snapshots(),
+      currentVersion: current,
+      defaults: {
+        dshHome: defaultDshHome(),
+        kernelDir: current ? paths.snapshotDir(current) : null
+      },
+      custom: {
+        dshHome: !!applied.dshHome,
+        kernelDir: !!applied.kernelDir
+      }
+    }
+  }
+
+  /**
+   * DSH_HOME 变更后重启内核。
+   *
+   * DSH_HOME 是以环境变量的形式喂给 dsh 子进程的，改了配置不等于改了那个
+   * 已经在跑的进程。所以这里按新值重启一次，让配置立刻生效而不必等用户
+   * 手动退出。失败只影响内核本身——配置已经落盘，下次启动照样生效。
+   */
+  async function restartKernelForDshHome() {
+    if (!config.read().kernel.currentVersion) {
+      return { ok: false, error: '尚未安装内核，配置已保存，安装后自动生效' }
+    }
+    try {
+      const url = await launcher.restart()
+      if (mainWindow && url) mainWindow.loadURL(url)
+      return { ok: true, url }
+    } catch (err) {
+      console.warn('[paths] DSH_HOME 变更后重启内核失败：', err.message)
+      return { ok: false, error: err.message }
+    }
+  }
+
+  ipcMain.handle('pathConfig:get', () => pathConfigSnapshot())
+
+  ipcMain.handle('pathConfig:validate', (_event, { kind, value } = {}) =>
+    validatePathConfig(kind, value, pathConfigContext())
+  )
+
+  ipcMain.handle('pathConfig:browse', async (_event, { kind } = {}) => {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow
+    const result = await dialog.showOpenDialog(win, {
+      title: kind === 'kernelDir' ? '选择内核目录' : '选择 DSH_HOME 目录',
+      defaultPath: kind === 'kernelDir' ? paths.snapshots() : paths.dshHome(),
+      properties: ['openDirectory', 'dontAddToRecent']
+    })
+    if (result.canceled || !result.filePaths?.length) return null
+    const picked = result.filePaths[0]
+    // 选完立刻校验，让界面马上告诉用户「这个能不能用」
+    return { path: picked, ...validatePathConfig(kind, picked, pathConfigContext()) }
+  })
+
+  ipcMain.handle('pathConfig:set', async (_event, { kind, value } = {}) => {
+    if (kind !== 'dshHome' && kind !== 'kernelDir') {
+      throw new Error(`未知的路径类型：${kind}`)
+    }
+    const applied = paths.getOverrides()
+
+    // 留空 = 恢复默认位置
+    if (value === null || String(value).trim() === '') {
+      config.write({
+        paths: kind === 'dshHome'
+          ? { dshHome: null, kernelDir: applied.kernelDir }
+          : { dshHome: applied.dshHome, kernelDir: null }
+      })
+      applyPathOverrides()
+      if (kind === 'kernelDir') normalizeKernelDirToCurrent()
+      if (kind === 'dshHome') {
+        ensureDirectories()
+        await restartKernelForDshHome()
+      }
+      return pathConfigSnapshot()
+    }
+
+    const result = validatePathConfig(kind, value, pathConfigContext())
+    if (!result.ok) throw new Error(result.reason)
+
+    if (kind === 'dshHome') {
+      config.write({ paths: { dshHome: result.value, kernelDir: applied.kernelDir } })
+      applyPathOverrides()
+      ensureDirectories()
+      const restarted = await restartKernelForDshHome()
+      return { ...pathConfigSnapshot(), restarted }
+    }
+
+    // 内核目录必须落在快照根目录内：只有那样才反推得出版本号，才能复用
+    // switchTo 这条已经过验证的切换链路。快照外的目录无法与 currentVersion
+    // 对应，硬切过去只会让设置页和内核面板各说各话。
+    if (!result.version) {
+      throw new Error(`请选择 ${paths.snapshots()} 下的内核快照目录`)
+    }
+    await launcher.switchTo(result.version)
+    normalizeKernelDirToCurrent()
+    return pathConfigSnapshot()
   })
 
   ipcMain.handle('kernel:setMode', (_event, { mode, version } = {}) => {
@@ -733,6 +948,25 @@ function registerIpc() {
   )
 
   ipcMain.handle('plugin:uninstall', (_event, { name } = {}) => plugins.uninstall(name))
+
+  /**
+   * 插件商店搜索。
+   *
+   * 每次都用当前配置的镜像现建实例：用户随时可能改 registry，而这里没有
+   * 需要保持的会话状态。搜索失败由 PluginStore 内部兜住（体现为 error 字段），
+   * 不会把网络异常直接抛到渲染层。
+   */
+  ipcMain.handle('plugin:search', async (_event, { query, size } = {}) => {
+    const store = new PluginStore({ registry: config.read().kernel.registry })
+    return store.search({ query, size })
+  })
+
+  /** 单个插件的详情，安装前用来展示它声明依赖哪个内核版本。 */
+  ipcMain.handle('plugin:detail', async (_event, { name } = {}) => {
+    if (!name) throw new Error('缺少插件包名')
+    const store = new PluginStore({ registry: config.read().kernel.registry })
+    return store.detail(name)
+  })
 
   ipcMain.handle('plugin:setEnabled', (_event, { name, enabled } = {}) =>
     plugins.setEnabled(name, enabled)

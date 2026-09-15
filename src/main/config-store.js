@@ -47,6 +47,22 @@ const DEFAULTS = {
   limits: {
     kernelKBps: 0, // 0 = unlimited; separate from plugin downloads
     pluginKBps: 0
+  },
+  /**
+   * 用户可覆盖的路径。**null 表示用默认位置**（都在 userData 下）。
+   *
+   * 这两项原来是硬编码的，其中 DSH_HOME 还是六条不变量之一（「必须等于
+   * userData/dsh-home」）。放宽成可配置的代价是要自己守住那条不变量的
+   * *精神*：数据永远不能落进内核树里，否则切换内核就会连带丢掉插件和会话。
+   * 所以写入前必须过 path-config.js 的校验——不允许指向内核目录、不允许
+   * 两者互相嵌套、不允许指向系统目录，且必须可写。
+   *
+   * - dshHome:   dsh 的 profile / 凭据 / 插件 / 会话根目录
+   * - kernelDir: 当前使用的内核快照目录（core/snapshots/<version>）
+   */
+  paths: {
+    dshHome: null,
+    kernelDir: null
   }
 }
 

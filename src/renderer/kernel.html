@@ -289,6 +289,12 @@
         100% { background-position: 0 50%; }
       }
 
+      /* 自更新区块用到的徽章变体（中性色由 .tag 本身提供） */
+      .tag.ok { background: rgba(63, 185, 80, 0.16); color: #6ee787; }
+      .tag.warn { background: rgba(224, 168, 60, 0.16); color: #f0c674; }
+      .tag.err { background: rgba(224, 82, 82, 0.16); color: #ff9a9a; }
+      input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+
       #overlay {
         position: fixed;
         inset: 0;
@@ -487,9 +493,109 @@
           <button data-page-node-id="SIBOmgC1KvdJ25ITps4Sd9" id="btnInstall"><!--pnid:q8zkKT3hAvlw2Ce2Yfnask-->安装插件</button>
         </div>
         <div data-page-node-id="c8fq0XntqZGf8z6t77i1bj" class="hint" id="pluginHint"></div>
+
+        <!-- 插件商店：直接检索 npm registry，装进 DSH_HOME 下的独立目录 -->
+        <div class="row" style="margin-top:16px">
+          <input class="grow" id="storeQuery" type="text" placeholder="从插件商店搜索，留空列出推荐">
+          <button id="btnStoreSearch">搜索商店</button>
+        </div>
+        <div id="storeBox" style="display:none; margin-top:10px">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:32%">插件</th>
+                <th style="width:14%">版本</th>
+                <th style="width:36%">说明</th>
+                <th style="width:18%">操作</th>
+              </tr>
+            </thead>
+            <tbody id="storeRows"></tbody>
+          </table>
+          <div class="empty" id="storeEmpty" style="display:none">没有匹配的插件。</div>
+        </div>
+        <div class="hint" id="storeHint"></div>
       </section>
 
-      <!--pnid:QueK1QnwPEa3XvSBviaNPR--><!-- 7. 说明 -->
+      <!-- 7. 应用更新：换的是桌面壳本体，与上面的内核更新是两条独立链路 -->
+      <section>
+        <div class="sec-head">
+          <h2>应用更新</h2>
+          <span class="sec-note">升级桌面壳本体，与上方的内核更新互不影响</span>
+        </div>
+
+        <div class="limit-block">
+          <div class="limit-head">
+            <div class="limit-title">DSH Desktop</div>
+            <span class="tag" id="updBadge">未检查</span>
+          </div>
+          <div class="grid">
+            <div class="field"><span class="k">当前版本</span><span class="v" id="updVersion">—</span></div>
+            <div class="field"><span class="k">最新版本</span><span class="v" id="updLatest">—</span></div>
+            <div class="field"><span class="k">上次检查</span><span class="v muted" id="updChecked">—</span></div>
+          </div>
+          <div class="bar" id="updBar" style="display:none"><i id="updBarFill"></i></div>
+          <div class="row" style="margin-top:12px">
+            <button id="btnUpdCheck">检查更新</button>
+            <button id="btnUpdInstall" class="primary">下载更新</button>
+            <label class="label" style="display:flex; align-items:center; gap:6px">
+              <input id="updAuto" type="checkbox">启动时自动检查
+            </label>
+          </div>
+          <div class="hint" id="updHint"></div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <input class="grow" id="updUrl" type="text" placeholder="更新源地址，例如 https://example.com/dsh-desktop">
+          <button id="btnUpdSaveUrl">保存地址</button>
+        </div>
+        <div class="hint" id="updUrlHint">未配置更新源时整条链路停用。地址只允许 http(s)，保存后写入 config.json → app.updateUrl。</div>
+      </section>
+
+      <!-- 8. 路径设置：内核目录与 DSH_HOME -->
+      <section>
+        <div class="sec-head">
+          <h2>路径设置</h2>
+          <span class="sec-note">留空即恢复默认位置，改动保存后立即生效</span>
+        </div>
+
+        <div class="limit-block">
+          <div class="limit-head">
+            <div class="limit-title">内核目录</div>
+            <span class="tag" id="pcKernelState">—</span>
+          </div>
+          <div class="row">
+            <input class="grow" id="pcKernelDir" type="text" placeholder="选择 core/snapshots 下已安装的内核">
+            <button id="btnPcKernelBrowse">浏览…</button>
+            <button id="btnPcKernelSave" class="primary">应用</button>
+            <button id="btnPcKernelDefault">恢复默认</button>
+          </div>
+          <div class="hint" id="pcKernelHint"></div>
+        </div>
+
+        <div class="limit-block" style="margin-top:12px">
+          <div class="limit-head">
+            <div class="limit-title">DSH_HOME</div>
+            <span class="tag" id="pcHomeState">—</span>
+          </div>
+          <div class="row">
+            <input class="grow" id="pcDshHome" type="text" placeholder="profile / 凭据 / 插件 / 会话的存放位置">
+            <button id="btnPcHomeBrowse">浏览…</button>
+            <button id="btnPcHomeSave" class="primary">应用</button>
+            <button id="btnPcHomeDefault">恢复默认</button>
+          </div>
+          <div class="hint" id="pcHomeHint"></div>
+        </div>
+
+        <div class="notes" style="margin-top:12px">
+          <ul>
+            <li><b>两者不能互相嵌套</b>：DSH_HOME 放进内核目录，清理旧快照时插件和会话会被一起删掉；反过来则会让 dsh 把整个内核当成自己的数据目录去读写。</li>
+            <li><b>不能指向系统目录</b>（Program Files、Windows 等），也不能是磁盘根目录。</li>
+            <li>修改 <b>DSH_HOME</b> 会自动重启内核以使新位置立即生效；<b>内核目录</b>只能选择 <code id="pcSnapshots"></code> 下已装好的快照。</li>
+          </ul>
+        </div>
+      </section>
+
+      <!--pnid:QueK1QnwPEa3XvSBviaNPR--><!-- 9. 说明 -->
       <section data-page-node-id="f5raAWn1kjiMUcCLVvMQ3N">
         <div data-page-node-id="3XAqCFqdrpnL9DYorRPVj1" class="sec-head"><h2 data-page-node-id="dMBld1gWP6crUvjrIzrbJV"><!--pnid:MJRyYV97lvVdzY6zCAQT0L-->为什么更新是安全的</h2></div>
         <div data-page-node-id="BUu8qmV9UoIEXWZhVxQpQE" class="notes">
@@ -591,6 +697,7 @@
         latest: null, // checkLatest() 结果
         plugins: [],
         appStatus: null, // dsh:getStatus()
+        update: null, // AppUpdater.snapshot()：桌面壳自更新状态
         busy: false,
         percent: 0,
         phase: '',
@@ -1383,7 +1490,7 @@
           })
           .then(function () {
             // 以下两项是补充信息，失败只影响各自区域。
-            return Promise.all([loadPlugins(), loadAppStatus()])
+            return Promise.all([loadPlugins(), loadAppStatus(), loadAppUpdate(), loadPathConfig()])
           })
           .then(function () {
             renderCurrent()
@@ -1401,6 +1508,458 @@
           })
           .catch(function () {
             state.appStatus = null
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 10.5 桌面壳自更新（electron-updater）
+       *
+       * 这里换的是桌面壳本体，与上面「升级内核」是两条独立链路。所有合法性
+       * 校验都在 app-updater.js 做完了：未打包的开发态、没配 updateUrl、
+       * 非 http(s) 地址都会让整条链路停用（enabled=false 并带上 reason）。
+       * 渲染层的职责是把 reason 老老实实显示出来，而不是放一个点了没反应、
+       * 也不说为什么的按钮。
+       * ------------------------------------------------------------------ */
+
+      // 与 AppUpdater 的 status 取值一一对应
+      var UPD_STATUS = {
+        idle: { text: '未检查', cls: '' },
+        checking: { text: '检查中…', cls: 'warn' },
+        available: { text: '有新版本', cls: 'warn' },
+        downloading: { text: '下载中', cls: 'warn' },
+        downloaded: { text: '待安装', cls: 'ok' },
+        'not-available': { text: '已是最新', cls: 'ok' },
+        error: { text: '检查失败', cls: 'err' },
+        disabled: { text: '未启用', cls: '' }
+      }
+
+      function updMeta(status) {
+        return UPD_STATUS[status] || { text: status || '未知', cls: '' }
+      }
+
+      function setAppUpdateHint(text, kind) {
+        var el = $('updHint')
+        if (!el) return
+        el.textContent = text || ''
+        el.className = 'hint' + (kind ? ' ' + kind : '')
+      }
+
+      function renderAppUpdate(s) {
+        // 显式传入 null/undefined 表示「拿不到状态」或「环境不支持」，必须真的
+        // 清空 state.update：否则下一行 `s = state.update` 会拿回上一轮的旧
+        // 快照继续渲染，界面就停在了一个已经过时的状态上。
+        state.update = s || null
+        s = state.update
+        if (!$('updBadge')) return
+
+        if (!s) {
+          $('updBadge').textContent = '不可用'
+          $('updVersion').textContent = '—'
+          $('updLatest').textContent = '—'
+          $('updChecked').textContent = '—'
+          $('updBar').style.display = 'none'
+          $('btnUpdCheck').disabled = true
+          $('btnUpdInstall').disabled = true
+          setAppUpdateHint('当前环境不支持应用内更新。', '')
+          return
+        }
+
+        var meta = updMeta(s.status)
+        $('updBadge').textContent = meta.text
+        $('updBadge').className = 'tag' + (meta.cls ? ' ' + meta.cls : '')
+        $('updVersion').textContent = s.currentVersion || '—'
+        $('updLatest').textContent = (s.info && s.info.version) || '—'
+        $('updChecked').textContent = s.lastCheckedAt ? formatTime(s.lastCheckedAt) : '从未检查'
+
+        // 用户正在输入时不要把 value 抢回去
+        var urlEl = $('updUrl')
+        if (urlEl && document.activeElement !== urlEl) urlEl.value = s.updateUrl || ''
+        var autoEl = $('updAuto')
+        if (autoEl) autoEl.checked = s.autoCheck !== false
+
+        // 进度条只在下载时出现，避免常驻一条 0% 的横条
+        if (s.status === 'downloading') {
+          $('updBar').style.display = ''
+          $('updBarFill').style.width = (s.percent || 0) + '%'
+        } else {
+          $('updBar').style.display = 'none'
+        }
+
+        // 检查进行中一并禁用，避免连点重复拉起检查
+        $('btnUpdCheck').disabled = !s.enabled || s.status === 'checking'
+
+        // 按钮语义跟着状态走：发现更新→下载；下完→重启安装
+        var installBtn = $('btnUpdInstall')
+        if (s.status === 'downloaded') {
+          installBtn.textContent = '重启并安装'
+          installBtn.disabled = false
+        } else if (s.status === 'available') {
+          installBtn.textContent = '下载更新'
+          installBtn.disabled = false
+        } else {
+          installBtn.textContent = '下载更新'
+          installBtn.disabled = true
+        }
+
+        var latest = s.info && s.info.version ? s.info.version : ''
+        if (!s.enabled) {
+          setAppUpdateHint(s.reason || '当前未启用应用内更新。', '')
+        } else if (s.status === 'error') {
+          setAppUpdateHint(describeError(s.error), 'err')
+        } else if (s.status === 'not-available') {
+          setAppUpdateHint('当前已是最新版本。', 'ok')
+        } else if (s.status === 'downloaded') {
+          setAppUpdateHint('更新已下载完成，点击「重启并安装」后应用会关闭并完成安装。', 'ok')
+        } else if (s.status === 'downloading') {
+          setAppUpdateHint('正在下载更新：' + (s.percent || 0) + '%', '')
+        } else if (s.status === 'available') {
+          setAppUpdateHint('发现新版本 ' + latest + '，点击「下载更新」开始下载。', '')
+        } else {
+          setAppUpdateHint(s.updateUrl ? '更新源已配置，可随时手动检查。' : '', '')
+        }
+      }
+
+      function loadAppUpdate() {
+        if (!api || !api.updater || typeof api.updater.status !== 'function') {
+          renderAppUpdate(null)
+          return Promise.resolve()
+        }
+        return Promise.resolve()
+          .then(function () {
+            return api.updater.status()
+          })
+          .then(function (s) {
+            renderAppUpdate(s || null)
+          })
+          .catch(function () {
+            // 拿不到状态不算致命错误，内核管理那一半照常可用
+            renderAppUpdate(null)
+          })
+      }
+
+      function checkAppUpdate() {
+        if (!api || !api.updater) return
+        setAppUpdateHint('正在检查更新…', '')
+        $('btnUpdCheck').disabled = true
+        Promise.resolve()
+          .then(function () {
+            return api.updater.check()
+          })
+          .then(function (s) {
+            renderAppUpdate(s || null)
+          })
+          .catch(function (err) {
+            setAppUpdateHint(describeError(err), 'err')
+            // 失败后按当前快照恢复按钮可用性
+            $('btnUpdCheck').disabled = !(state.update && state.update.enabled)
+          })
+      }
+
+      function doAppUpdateInstall() {
+        if (!api || !api.updater) return
+        // 同一枚按钮在下载完成后会变成「重启并安装」，据此分流
+        if (state.update && state.update.status === 'downloaded') {
+          setAppUpdateHint('正在退出并安装…', '')
+          $('btnUpdInstall').disabled = true
+          Promise.resolve()
+            .then(function () {
+              return api.updater.install()
+            })
+            .catch(function (err) {
+              setAppUpdateHint(describeError(err), 'err')
+              return loadAppUpdate() // 用户取消或权限不足时要把界面恢复回来
+            })
+          return
+        }
+        setAppUpdateHint('正在下载更新…', '')
+        $('btnUpdInstall').disabled = true
+        Promise.resolve()
+          .then(function () {
+            return api.updater.download()
+          })
+          .then(function (s) {
+            renderAppUpdate(s || null)
+          })
+          .catch(function (err) {
+            setAppUpdateHint(describeError(err), 'err')
+            $('btnUpdInstall').disabled = !(state.update && state.update.status === 'available')
+          })
+      }
+
+      function saveUpdateUrl() {
+        var input = $('updUrl')
+        var hintEl = $('updUrlHint')
+        if (!input || !hintEl) return
+        var value = (input.value || '').trim()
+        if (!value) {
+          hintEl.textContent = '请先填写更新源地址。'
+          hintEl.className = 'hint err'
+          return
+        }
+        hintEl.textContent = '正在保存…'
+        hintEl.className = 'hint'
+        Promise.resolve()
+          .then(function () {
+            return api.updater.setUpdateUrl(value)
+          })
+          .then(function (s) {
+            renderAppUpdate(s || null)
+            hintEl.textContent = '更新源已保存，下次检查时生效。'
+            hintEl.className = 'hint ok'
+          })
+          .catch(function (err) {
+            // 非 http(s) 的地址会在这里被 AppUpdater 挡回来
+            hintEl.textContent = describeError(err)
+            hintEl.className = 'hint err'
+          })
+      }
+
+      function toggleAutoCheck() {
+        var el = $('updAuto')
+        if (!el) return
+        Promise.resolve()
+          .then(function () {
+            return api.updater.setAutoCheck(el.checked)
+          })
+          .then(function (s) {
+            renderAppUpdate(s || null)
+          })
+          .catch(function (err) {
+            setAppUpdateHint(describeError(err), 'err')
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 10.6 路径设置（内核目录 / DSH_HOME）
+       *
+       * 这两条路径过去是硬编码的，现在放开给用户填——代价是「数据不能落进
+       * 内核树」这条约束从代码保证降级成了校验保证。所以 UI 这边的关键不是
+       * 把值送过去，而是**把主进程拒绝的理由原样显示出来**：set 抛错是正常
+       * 流程（校验不通过），不是崩溃。
+       * ------------------------------------------------------------------ */
+
+      var PC_FIELDS = {
+        dshHome: {
+          input: 'pcDshHome',
+          hint: 'pcHomeHint',
+          state: 'pcHomeState',
+          save: 'btnPcHomeSave'
+        },
+        kernelDir: {
+          input: 'pcKernelDir',
+          hint: 'pcKernelHint',
+          state: 'pcKernelState',
+          save: 'btnPcKernelSave'
+        }
+      }
+
+      var pcState = null
+
+      function setPcHint(kind, text, kindClass) {
+        var el = $(PC_FIELDS[kind].hint)
+        if (!el) return
+        el.textContent = text || ''
+        el.className = 'hint' + (kindClass ? ' ' + kindClass : '')
+      }
+
+      function renderPathConfig(s) {
+        if (!s) return
+        pcState = s
+        if ($('pcSnapshots')) $('pcSnapshots').textContent = s.snapshotsDir || ''
+
+        var homeInput = $('pcDshHome')
+        if (homeInput && document.activeElement !== homeInput) homeInput.value = s.dshHome || ''
+        var kernelInput = $('pcKernelDir')
+        if (kernelInput && document.activeElement !== kernelInput) kernelInput.value = s.kernelDir || ''
+
+        var homeTag = $('pcHomeState')
+        if (homeTag) {
+          var customHome = !!(s.custom && s.custom.dshHome)
+          homeTag.textContent = customHome ? '自定义' : '默认'
+          homeTag.className = 'tag' + (customHome ? ' warn' : '')
+        }
+        var kernelTag = $('pcKernelState')
+        if (kernelTag) {
+          kernelTag.textContent = s.currentVersion ? 'v' + s.currentVersion : '未安装'
+          kernelTag.className = 'tag' + (s.currentVersion ? ' ok' : '')
+        }
+      }
+
+      function loadPathConfig() {
+        if (!api || !api.pathConfig) return Promise.resolve()
+        return Promise.resolve()
+          .then(function () {
+            return api.pathConfig.get()
+          })
+          .then(function (s) {
+            renderPathConfig(s)
+          })
+          .catch(function () {
+            /* 拿不到只影响这一块，内核管理那一半照常可用 */
+          })
+      }
+
+      /** 边输边校验，让用户还没点「应用」就知道这条路走不走得通。 */
+      function validatePathLive(kind) {
+        if (!api || !api.pathConfig) return
+        var value = ($(PC_FIELDS[kind].input).value || '').trim()
+        if (!value) {
+          setPcHint(kind, '留空则恢复默认位置。', '')
+          return
+        }
+        Promise.resolve()
+          .then(function () {
+            return api.pathConfig.validate(kind, value)
+          })
+          .then(function (r) {
+            setPcHint(kind, r.ok ? '路径可用。' : r.reason, r.ok ? 'ok' : 'err')
+          })
+          .catch(function (err) {
+            setPcHint(kind, describeError(err), 'err')
+          })
+      }
+
+      function applyPath(kind, value) {
+        if (!api || !api.pathConfig) return
+        var saveBtn = $(PC_FIELDS[kind].save)
+        setPcHint(kind, '正在应用…', '')
+        if (saveBtn) saveBtn.disabled = true
+        Promise.resolve()
+          .then(function () {
+            return api.pathConfig.set(kind, value)
+          })
+          .then(function (s) {
+            renderPathConfig(s)
+            setPcHint(kind, value ? '已保存并生效。' : '已恢复默认位置。', 'ok')
+          })
+          .catch(function (err) {
+            // 校验不通过是预期内的失败，把原因原样给用户看
+            setPcHint(kind, describeError(err), 'err')
+          })
+          .then(function () {
+            if (saveBtn) saveBtn.disabled = false
+          })
+      }
+
+      function browsePath(kind) {
+        if (!api || !api.pathConfig) return
+        Promise.resolve()
+          .then(function () {
+            return api.pathConfig.browse(kind)
+          })
+          .then(function (picked) {
+            if (!picked || !picked.path) return // 用户取消
+            var input = $(PC_FIELDS[kind].input)
+            if (input) input.value = picked.path
+            setPcHint(kind, picked.ok ? '已选择，点击「应用」保存。' : picked.reason, picked.ok ? 'ok' : 'err')
+          })
+          .catch(function (err) {
+            setPcHint(kind, describeError(err), 'err')
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 10.7 插件商店
+       *
+       * 商店就是 npm registry：dsh 插件本来就是 npm 包，安装走的也是
+       * pnpm add <包名>。所以「搜得到的」和「装得上的」来自同一个源，不会
+       * 出现列表里能点、一点安装却 404 的情况。
+       * ------------------------------------------------------------------ */
+
+      function setStoreHint(text, kindClass) {
+        var el = $('storeHint')
+        if (!el) return
+        el.textContent = text || ''
+        el.className = 'hint' + (kindClass ? ' ' + kindClass : '')
+      }
+
+      function storeRow(item) {
+        var tr = document.createElement('tr')
+
+        var nameTd = document.createElement('td')
+        nameTd.className = 'mono'
+        nameTd.textContent = item.name || ''
+
+        var verTd = document.createElement('td')
+        verTd.className = 'mono'
+        verTd.textContent = item.version || '—'
+
+        var descTd = document.createElement('td')
+        descTd.textContent = item.description || '（无说明）'
+
+        var opsTd = document.createElement('td')
+        var btn = document.createElement('button')
+        btn.textContent = '安装'
+        btn.addEventListener('click', function () {
+          btn.disabled = true
+          btn.textContent = '安装中…'
+          setStoreHint('正在安装 ' + item.name + ' …', '')
+          Promise.resolve()
+            .then(function () {
+              return api.plugins.install(item.name, item.version || 'latest')
+            })
+            .then(function () {
+              setStoreHint('已安装 ' + item.name + '。', 'ok')
+              return loadPlugins()
+            })
+            .catch(function (err) {
+              setStoreHint(describeError(err), 'err')
+            })
+            .then(function () {
+              btn.disabled = false
+              btn.textContent = '安装'
+            })
+        })
+        opsTd.appendChild(btn)
+
+        tr.appendChild(nameTd)
+        tr.appendChild(verTd)
+        tr.appendChild(descTd)
+        tr.appendChild(opsTd)
+        return tr
+      }
+
+      function renderStore(items) {
+        var box = $('storeBox')
+        var rows = $('storeRows')
+        var empty = $('storeEmpty')
+        if (!box || !rows) return
+        rows.innerHTML = ''
+        box.style.display = ''
+        if (!items.length) {
+          if (empty) empty.style.display = ''
+          return
+        }
+        if (empty) empty.style.display = 'none'
+        for (var i = 0; i < items.length; i++) {
+          rows.appendChild(storeRow(items[i]))
+        }
+      }
+
+      function searchStore() {
+        if (!api || !api.plugins || typeof api.plugins.search !== 'function') return
+        var query = ($('storeQuery').value || '').trim()
+        setStoreHint('正在搜索…', '')
+        $('btnStoreSearch').disabled = true
+        Promise.resolve()
+          .then(function () {
+            return api.plugins.search(query, 30)
+          })
+          .then(function (res) {
+            res = res || {}
+            // 网络失败不抛异常，而是带 error 字段回来
+            if (res.error) {
+              setStoreHint('搜索失败：' + res.error, 'err')
+              return
+            }
+            renderStore(res.items || [])
+            setStoreHint('共 ' + (res.items || []).length + ' 个结果，点击「安装」装到 DSH_HOME 下的插件目录。', 'ok')
+          })
+          .catch(function (err) {
+            setStoreHint(describeError(err), 'err')
+          })
+          .then(function () {
+            $('btnStoreSearch').disabled = false
           })
       }
 
@@ -1426,6 +1985,58 @@
       }
 
       function bindEvents() {
+        /* ---- 桌面壳自更新 ---- */
+        $('btnUpdCheck').addEventListener('click', function () {
+          checkAppUpdate()
+        })
+        $('btnUpdInstall').addEventListener('click', function () {
+          doAppUpdateInstall()
+        })
+        $('btnUpdSaveUrl').addEventListener('click', function () {
+          saveUpdateUrl()
+        })
+        $('updUrl').addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') saveUpdateUrl()
+        })
+        $('updAuto').addEventListener('change', function () {
+          toggleAutoCheck()
+        })
+
+        /* ---- 路径设置 ---- */
+        $('btnPcHomeSave').addEventListener('click', function () {
+          applyPath('dshHome', $('pcDshHome').value)
+        })
+        $('btnPcHomeBrowse').addEventListener('click', function () {
+          browsePath('dshHome')
+        })
+        $('btnPcHomeDefault').addEventListener('click', function () {
+          applyPath('dshHome', '')
+        })
+        $('pcDshHome').addEventListener('change', function () {
+          validatePathLive('dshHome')
+        })
+
+        $('btnPcKernelSave').addEventListener('click', function () {
+          applyPath('kernelDir', $('pcKernelDir').value)
+        })
+        $('btnPcKernelBrowse').addEventListener('click', function () {
+          browsePath('kernelDir')
+        })
+        $('btnPcKernelDefault').addEventListener('click', function () {
+          applyPath('kernelDir', '')
+        })
+        $('pcKernelDir').addEventListener('change', function () {
+          validatePathLive('kernelDir')
+        })
+
+        /* ---- 插件商店 ---- */
+        $('btnStoreSearch').addEventListener('click', function () {
+          searchStore()
+        })
+        $('storeQuery').addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') searchStore()
+        })
+
         $('btnCheck').addEventListener('click', function () {
           checkLatest()
         })
@@ -1560,6 +2171,15 @@
             api.kernel.onProgress(onProgress)
           } catch (err) {
             /* 订阅失败只影响进度显示 */
+          }
+        }
+
+        // 下载进度与后台自动检查的结果都从这条通道推过来
+        if (api.updater && typeof api.updater.onState === 'function') {
+          try {
+            api.updater.onState(renderAppUpdate)
+          } catch (err) {
+            /* 订阅失败只影响实时刷新，手动检查仍然可用 */
           }
         }
 
