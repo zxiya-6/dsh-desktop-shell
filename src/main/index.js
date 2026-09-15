@@ -26,6 +26,8 @@ const { KernelPackageManager } = require('./plugins/backup-roll/kernel-package-m
 const { PluginManager } = require('./plugins/backup-roll/plugin-manage')
 const { ThrottleProxy } = require('./plugins/backup-roll/throttle-proxy')
 const { assertSnapshotVersion, assertVersion } = require('./plugins/backup-roll/validate')
+const { migrateUserData } = require('./migrate')
+const { AppUpdater } = require('./app-updater')
 
 /**
  * Pin the userData directory name.
@@ -76,6 +78,16 @@ const proxies = {
 
 const kernelManager = new KernelPackageManager({ registry, config, proxies })
 const plugins = new PluginManager({ config, registry, proxies })
+
+/**
+ * Desktop-shell self update.
+ *
+ * Separate from kernel updates on purpose: this replaces the app, the panel
+ * replaces dsh. It stays dormant until somebody publishes a release and points
+ * config.app.updateUrl at it.
+ */
+const updater = new AppUpdater({ config })
+updater.on('state', (state) => sendUpdaterState(state))
 
 let mainWindow = null
 let terminalWindow = null
@@ -289,6 +301,18 @@ function sendKernelProgress(payload) {
   }
 }
 
+/** Same reasoning as kernel progress: every window may be listening. */
+function sendUpdaterState(state) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    try {
+      win.webContents.send('app:update', state)
+    } catch {
+      /* window went away mid-send */
+    }
+  }
+}
+
 /** Snapshot of kernel state for the UI. */
 function kernelStatus() {
   const cfg = config.read()
@@ -307,8 +331,50 @@ function kernelStatus() {
   }
 }
 
+/**
+ * Bring a machine upgraded from an older build onto the current layout.
+ *
+ * Runs before the kernel is resolved — the whole point is that a legacy kernel
+ * must be adopted *before* the app decides there is no kernel at all. Never
+ * fatal: a migration that fails must not stop the shell from booting.
+ */
+function runMigrations() {
+  try {
+    const bundledRoots = []
+    try {
+      bundledRoots.push(paths.appModules())
+    } catch {
+      /* not resolvable in some script contexts — userData scan still runs */
+    }
+
+    const report = migrateUserData({
+      root: paths.userData(),
+      config,
+      packageRoots: bundledRoots,
+      log: (msg) => console.log(`[migrate] ${msg}`)
+    })
+
+    if (report.adopted.length || report.rescued.length) {
+      console.log(
+        `[migrate] 采纳 ${report.adopted.length} 个遗留内核，抢救 ${report.rescued.length} 项数据`
+      )
+    }
+    for (const skipped of report.skipped) {
+      console.log(`[migrate] 跳过 ${skipped.dir}${skipped.version ? ` (${skipped.version})` : ''}：${skipped.reason}`)
+    }
+    for (const err of report.errors) {
+      console.warn(`[migrate] ${err.dir} 迁移失败：${err.error}`)
+    }
+    return report
+  } catch (err) {
+    console.error('[migrate] 非致命失败：', err.message)
+    return null
+  }
+}
+
 async function boot() {
   ensureDirectories()
+  runMigrations()
   createMainWindow()
 
   // Resolve the kernel *before* booting it. Without this the user would stare
@@ -336,6 +402,67 @@ async function boot() {
       err.message
     )
   }
+}
+
+/**
+ * Interactive app-update flow for the menu item.
+ *
+ * Native dialogs rather than the web UI on purpose: the shell update has to be
+ * usable even when dsh — and therefore most of our rendered UI — is not
+ * running. The renderer gets the same information over `app:update` later.
+ */
+async function promptAppUpdate() {
+  const availability = updater.availability()
+  if (!availability.ok) {
+    dialog.showMessageBox({
+      type: 'info',
+      title: '应用更新',
+      message: availability.reason,
+      detail: '把静态更新目录写到 config.json 的 app.updateUrl（内含 latest.yml 与安装包）即可启用自动检查。'
+    })
+    return null
+  }
+
+  const state = await updater.checkForUpdates()
+
+  if (state.status === 'not-available') {
+    dialog.showMessageBox({ type: 'info', title: '应用更新', message: `已是最新版本（${state.currentVersion}）` })
+    return state
+  }
+  if (state.status === 'error') {
+    dialog.showErrorBox('检查更新失败', state.error || '未知错误')
+    return state
+  }
+  if (state.status !== 'available') return state
+
+  const answer = await dialog.showMessageBox({
+    type: 'question',
+    title: '应用更新',
+    message: `发现新版本 ${state.info?.version}`,
+    detail: `当前: ${state.currentVersion}\n${state.info?.releaseDate ? `发布日期: ${state.info.releaseDate}\n` : ''}是否现在下载并安装？`,
+    buttons: ['下载并安装', '取消'],
+    defaultId: 0,
+    cancelId: 1
+  })
+  if (answer.response !== 0) return state
+
+  const downloaded = await updater.download()
+  if (downloaded.status !== 'downloaded') {
+    dialog.showErrorBox('下载更新失败', downloaded.error || '未知错误')
+    return downloaded
+  }
+
+  const restart = await dialog.showMessageBox({
+    type: 'question',
+    title: '应用更新',
+    message: `版本 ${downloaded.info?.version} 已就绪`,
+    detail: '安装需要重启应用。',
+    buttons: ['立即重启并安装', '稍后'],
+    defaultId: 0,
+    cancelId: 1
+  })
+  if (restart.response === 0) updater.quitAndInstall()
+  return downloaded
 }
 
 /* ------------------------------------------------------------------ *
@@ -441,6 +568,12 @@ function buildMenu() {
         {
           label: '打开 dsh 日志',
           click: () => shell.openPath(paths.logFile())
+        },
+        {
+          label: '检查应用更新…',
+          click: () => {
+            promptAppUpdate().catch((err) => dialog.showErrorBox('检查更新失败', err.message))
+          }
         },
         { type: 'separator' },
         {
@@ -638,6 +771,30 @@ function registerIpc() {
     return true
   })
 
+  /* ---------------- desktop shell self-update ---------------- */
+
+  ipcMain.handle('app:updateStatus', () => updater.snapshot())
+
+  ipcMain.handle('app:checkUpdate', () => updater.checkForUpdates())
+
+  ipcMain.handle('app:downloadUpdate', () => updater.download())
+
+  ipcMain.handle('app:installUpdate', () => {
+    // Relies on the same before-quit teardown as a manual exit, so the dsh
+    // child process is not left behind holding files the installer replaces.
+    terminals.disposeAll()
+    return updater.quitAndInstall()
+  })
+
+  // Only ever accepts http(s) (validated in AppUpdater) and only ever persists
+  // to config.json — a renderer must not be able to pick its own update source.
+  ipcMain.handle('app:setUpdateUrl', (_event, { url } = {}) => {
+    if (typeof url !== 'string' || !url) throw new Error('缺少更新地址')
+    return updater.setUpdateUrl(url)
+  })
+
+  ipcMain.handle('app:setAutoCheck', (_event, { enabled } = {}) => updater.setAutoCheck(enabled !== false))
+
   ipcMain.handle('terminal:available', () => ({
     available: terminals.available(),
     reason: terminals.unavailableReason(),
@@ -712,6 +869,15 @@ if (gotLock) {
       )
       if (mainWindow && !mainWindow.isDestroyed()) loadLocalPage(mainWindow, 'loading.html')
     })
+
+    // Deliberately quiet: no dialog when nothing is available. Checking costs
+    // one request to the configured feed and nothing happens until the user
+    // agrees to install.
+    if (updater.availability().ok && config.read().app.autoCheckUpdate !== false) {
+      setTimeout(() => {
+        updater.checkForUpdates().catch((err) => console.warn('[updater]', err.message))
+      }, 8000)
+    }
 
     boot().catch((err) => {
       // boot() resolves the kernel before creating the window, so a throw here

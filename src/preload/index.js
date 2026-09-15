@@ -66,6 +66,29 @@ const plugins = {
   setEnabled: (name, enabled) => ipcRenderer.invoke('plugin:setEnabled', { name, enabled })
 }
 
+/**
+ * Desktop-shell self update (electron-updater).
+ *
+ * Renderers get read-mostly access: they may trigger a check or an install, but
+ * the feed URL write goes through AppUpdater's own validation first and always
+ * ends up in config.json — never from a value a page can hijack at runtime.
+ */
+const updater = {
+  status: () => ipcRenderer.invoke('app:updateStatus'),
+  check: () => ipcRenderer.invoke('app:checkUpdate'),
+  download: () => ipcRenderer.invoke('app:downloadUpdate'),
+  install: () => ipcRenderer.invoke('app:installUpdate'),
+  setUpdateUrl: (url) => ipcRenderer.invoke('app:setUpdateUrl', { url }),
+  setAutoCheck: (enabled) => ipcRenderer.invoke('app:setAutoCheck', { enabled }),
+
+  /** `{status: idle|checking|available|downloading|downloaded|not-available|error|disabled, info, error}` */
+  onState: (callback) => {
+    const listener = (_event, value) => callback(value)
+    ipcRenderer.on('app:update', listener)
+    return () => ipcRenderer.removeListener('app:update', listener)
+  }
+}
+
 contextBridge.exposeInMainWorld('dshDesktop', {
   getStatus: () => ipcRenderer.invoke('dsh:getStatus'),
   restart: () => ipcRenderer.invoke('dsh:restart'),
@@ -77,6 +100,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     return () => ipcRenderer.removeListener('dsh:status', listener)
   },
   openKernel: () => ipcRenderer.invoke('app:openKernel'),
+  updater,
   kernel,
   plugins,
   terminal

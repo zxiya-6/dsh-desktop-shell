@@ -26,6 +26,16 @@ const KERNEL_MIN_NODE_MAJOR = 24
 
 const DEFAULTS = {
   version: 1,
+  /** Desktop-shell自身的状态，与 kernel 段互不干扰。 */
+  app: {
+    /** 应用自更新源（静态目录，内含 latest.yml + 安装包）；未配置则整体停用。 */
+    updateUrl: null,
+    autoCheckUpdate: true,
+    /** 已执行的迁移记录：[{ id, at, versions, rescued }] */
+    migrations: [],
+    /** 旧版本留下的 DSH_HOME 位置，仅用于迁移时抢救数据。 */
+    legacyDshHome: null
+  },
   kernel: {
     mode: 'auto', // 'auto' (follow latest) | 'pinned' (stay on pinnedVersion)
     pinnedVersion: null,
