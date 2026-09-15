@@ -1,0 +1,26 @@
+# --- Node / Electron ---
+node_modules/
+dist/
+build/*.exe
+*.log
+
+# --- App runtime artifacts (never source) ---
+core/
+staging/
+.asar/
+release/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+
+# --- IDE ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- Local overrides ---
+.env
+.env.local
