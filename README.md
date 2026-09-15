@@ -10,7 +10,7 @@
 | | |
 |---|---|
 | 是什么 | DeepSeek Harness 的 Windows 桌面壳：依赖内置、与系统环境隔离、自带终端 |
-| 产物 | `DSH-Desktop-Setup-0.1.0.exe`（NSIS 安装器）、`DSH-Desktop-0.1.0-portable.exe`（绿色版） |
+| 产物 | `DSH-Desktop-Setup-0.1.1.exe`（NSIS 安装器）、`DSH-Desktop-0.1.1-portable.exe`（绿色版） |
 | 构建 | `npm install` → `npm run dist:win`（**必须 Node 24**，见第二节） |
 | 数据在哪 | `%APPDATA%\dsh-desktop\`，与安装目录无关，**卸载不丢** |
 | 源码结构 | `src/main`（主进程）、`src/preload`、`src/renderer`（加载页 / 终端 / 内核面板） |
@@ -34,6 +34,8 @@
 | `smoke:switch` | **PASS** | 成功路径 + 失败路径（配置不被污染、旧内核自愈） |
 | `smoke:install` | **PASS** | 真实下载 500 依赖 → 原生构建 → 冒烟 → 原子提升全链路，环境已还原 |
 | `smoke:migrate` | **18 / 18**（新增） | 遗留内核收养、快照不被覆盖、数据抢救、幂等、残缺候选不抛错、应用自更新启用门槛 |
+| `smoke:paths` | **40 / 40** | 路径归一化、DSH_HOME 与内核目录的嵌套互斥、系统目录拒绝 |
+| `smoke:lock` | **34 / 34** | 抢锁互斥、只释放自己的锁、陈旧锁接管、残缺锁文件、僵尸锁清理（存活绝不误删） |
 
 ### 待办
 
@@ -43,7 +45,8 @@
 | 2 | `electron-updater` 自动更新 UI | **已完成**：主进程链路（第 5 节）+ 内核管理面板第 7 节「应用更新」（当前/最新版本、检查、下载进度条、重启并安装、更新源与「启动时自动检查」开关）。菜单「帮助 → 检查应用更新…」的原生对话框保留，作为内核起不来时的兜底。**端到端仍未真机验证**：尚未配置真实更新源（见第七节已知限制） |
 | 3 | 真机出包验证 NSIS（自选路径 / Geek 识别 / 卸载清场） | **已完成**：`npm run dist:win` 在 Windows + **portable Node 24.21** 上跑通，产出 `DSH-Desktop-Setup-0.1.0.exe`(NSIS) + `DSH-Desktop-0.1.0-portable.exe`，且 `node-pty` 在打包后的 `app.asar.unpacked` 中实测可启 PTY（见第 2.6 节补充）。系统自带的 Node 22 不够用，构建机须自备 Node 24（见第 2 节） |
 | 4 | 启动容错：三处会导致「双击后完全没有窗口」的缺陷 | **已完成**：模块级 `applyPathOverrides()` 与 `boot()` 中的 `normalizeKernelDirToCurrent()` 缺 try/catch（一抛错主进程在 `require` 阶段或 `createMainWindow()` 前就崩），窗口 `show:false` 且无 `did-fail-load` 兜底（加载失败则 `ready-to-show` 永不触发）。三处均为**纯兜底**，正常路径一行都不执行 |
-| 5 | 单实例锁跨「便携版 / 安装版」失效 | **未做**：两者 `userData` 不同，锁各管各的，可同时运行并争抢 3080 端口。已知副作用：多实例会互相挤崩内核，并在 `dsh-home/task-board/` 留下僵尸锁，导致下次启动内核报 `ledger is already owned by process <pid>`。临时处理：确认该 PID 已死后删掉 `ledger-v2.lock` |
+| 5 | 单实例锁跨「便携版 / 安装版」失效 | **已完成**：Electron 自带的锁按 userData 区分，便携版（exe 同级 `dsh-desktop-data`）与安装版（`%APPDATA%\dsh-desktop`）各持一把，能同时跑并争抢端口。新增 `src/main/instance-lock.js`，把锁放到与 userData 无关的固定位置 `%APPDATA%\dsh-desktop-shell\instance.lock`，两版本共享；抢不到时弹原生对话框并退出。同文件里的 `clearStaleLock()` 还负责启动前清掉内核侧僵尸锁（见下） |
+| 6 | 内核侧僵尸锁导致「双击打不开」 | **已完成**：task-board 会在 `dsh-home/task-board/ledger-v2.lock` 记下自己的 pid，进程被强杀后锁不会消失，下次启动内核直接报 `ledger is already owned by process <pid>` 并退出。`boot()` 现在会在拉起内核前调 `clearStaleLock()`：pid 已死就删，还活着绝不动 |
 
 ### 接手必读：六条不变量
 

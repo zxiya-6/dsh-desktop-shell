@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop shell for DeepSeek Harness (DSH) — bundled runtime, isolated from the system, with a built-in terminal",
   "main": "src/main/index.js",
   "author": "DSH Desktop",
@@ -24,6 +24,7 @@
     "smoke:ui": "electron scripts/smoke-ui.js",
     "smoke:migrate": "node scripts/smoke-migrate.js",
     "smoke:paths": "node scripts/smoke-paths.js",
+    "smoke:lock": "node scripts/smoke-lock.js",
     "dist:win": "electron-builder --win --x64",
     "dist:dir": "electron-builder --win --x64 --dir"
   },

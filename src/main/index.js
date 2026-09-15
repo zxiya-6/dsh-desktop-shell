@@ -30,6 +30,7 @@ const { assertSnapshotVersion, assertVersion } = require('./plugins/backup-roll/
 const { migrateUserData } = require('./migrate')
 const { AppUpdater } = require('./app-updater')
 const { PluginStore } = require('./plugins/backup-roll/plugin-store')
+const { acquireInstanceLock, releaseInstanceLock, clearStaleLock } = require('./instance-lock')
 
 /**
  * Pin the userData directory name.
@@ -177,7 +178,71 @@ let kernelWindow = null
 
 /* ------------------------------------------------------------------ *
  * Single instance
+ *
+ * 两道锁，缺一不可：
+ *   1) Electron 自带的 `requestSingleInstanceLock()` —— 只在**同一个
+ *      userData** 内生效，负责把重复启动的同版本唤到前台（second-instance）。
+ *   2) 自建的跨版本锁（instance-lock.js）—— 便携版与安装版的 userData
+ *      不同，自带锁各管各的，两边能同时跑起来抢端口、互相挤崩内核。
+ *
+ * 第 2 道锁的路径**不能**取 userData（那正是失效的原因），要取一个与它无关
+ * 的固定位置：%APPDATA%\dsh-desktop-shell\instance.lock。
  * ------------------------------------------------------------------ */
+
+/**
+ * 跨版本锁文件。
+ *
+ * `app.getPath('appData')` 不受 `pinUserData()` 改写 userData 的影响，所以
+ * 便携版和安装版算出来是同一个文件。
+ */
+function crossEditionLockFile() {
+  return path.join(app.getPath('appData'), 'dsh-desktop-shell', 'instance.lock')
+}
+
+let crossEditionLockPath = null
+
+/**
+ * 抢跨版本锁。抢不到就提示并退出。
+ *
+ * 这里不能像 second-instance 那样去唤醒已有窗口 —— 那是同一个 Electron 实例
+ * 内部才有的事件，两个不同版本之间没有这条通道。所以只能明确告诉用户
+ * 「已经开着一个了」，并说明为什么不能同时开。
+ *
+ * @returns {boolean} 是否可以继续启动
+ */
+function claimCrossEditionLock() {
+  crossEditionLockPath = crossEditionLockFile()
+  const result = acquireInstanceLock({
+    file: crossEditionLockPath,
+    payload: {
+      version: app.getVersion(),
+      portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
+      exe: app.getPath('exe')
+    }
+  })
+  if (result.ok) return true
+
+  if (result.reason === 'held') {
+    const who = result.holder || {}
+    const which = who.portable ? '便携版' : '安装版'
+    console.warn('[lock] 已有实例在运行：', JSON.stringify(who))
+    dialog.showMessageBoxSync({
+      type: 'warning',
+      title: 'DSH Desktop 已在运行',
+      message: `已经有一个 DSH Desktop 在运行了（${which}，pid ${who.pid ?? '未知'}）。`,
+      detail:
+        '两个实例会争抢同一个端口，并互相把对方的内核挤掉，还会在数据目录里留下' +
+        '锁文件，导致下次启动失败。\n\n请先关掉正在运行的那个，再启动本程序。',
+      buttons: ['知道了']
+    })
+    return false
+  }
+
+  // 写不了锁文件（目录权限等）：不拦启动，但要说清楚 —— 静默放行等于把
+  // 「两个实例互踩」这个更难查的问题留给用户。
+  console.warn('[lock] 跨版本锁获取失败，已按不检查继续启动：', result.error && result.error.message)
+  return true
+}
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -461,6 +526,33 @@ function runMigrations() {
   }
 }
 
+/**
+ * 清掉内核侧留下的僵尸锁。
+ *
+ * task-board 插件会在 `dsh-home/task-board/ledger-v2.lock` 里记下自己的 pid。
+ * 进程被强杀（多开互挤、任务管理器结束进程、上次的崩溃）时锁不会自己消失，
+ * 下次启动内核会直接报：
+ *
+ *   task-board ledger is already owned by process 53632; ...
+ *   remove ...\ledger-v2.lock manually and retry
+ *
+ * 然后内核进程退出 —— 应用界面停在错误页，用户看到的就是「双击了却打不开」。
+ * 这里启动前判一次 pid：已死就删掉，还活着就绝不动（那说明真有另一个实例）。
+ *
+ * 整段包在 try/catch 里，理由同 runMigrations —— 清理失败不许阻断启动。
+ */
+function clearStaleKernelLock() {
+  try {
+    const file = path.join(paths.dshHome(), 'task-board', 'ledger-v2.lock')
+    const result = clearStaleLock(file)
+    if (result === 'removed') {
+      console.warn('[lock] 已清理内核侧僵尸锁（持有者进程已退出）：', file)
+    }
+  } catch (err) {
+    console.warn('[lock] 清理内核侧锁失败，已跳过：', err.message)
+  }
+}
+
 async function boot() {
   ensureDirectories()
   runMigrations()
@@ -472,6 +564,8 @@ async function boot() {
   } catch (err) {
     console.warn('[paths] 校正内核目录失败，已按默认路径继续启动：', err.message)
   }
+  // 必须在拉起内核之前：内核一起来就会去抢这把锁。
+  clearStaleKernelLock()
   createMainWindow()
 
   // Resolve the kernel *before* booting it. Without this the user would stare
@@ -1089,6 +1183,13 @@ function registerIpc() {
 
 if (gotLock) {
   app.on('ready', () => {
+    // 先抢跨版本锁：抢不到说明另一个版本已经在跑，弹提示后直接退出，
+    // 不要走到下面去创建窗口和拉起内核 —— 那正是「两个内核互踩」的起点。
+    if (!claimCrossEditionLock()) {
+      app.quit()
+      return
+    }
+
     registerIpc()
     buildMenu()
 
@@ -1126,6 +1227,15 @@ if (gotLock) {
   app.on('window-all-closed', () => {
     // Keep dsh alive with the app on macOS convention; quit elsewhere.
     if (!isMac) app.quit()
+  })
+
+  // 释放跨版本锁。放在 will-quit（而不是 before-quit）是因为 before-quit 里
+  // 可能被 preventDefault 拦下来去收进程树 —— 那时候还不能算退出。
+  app.on('will-quit', () => {
+    if (crossEditionLockPath) {
+      releaseInstanceLock(crossEditionLockPath)
+      crossEditionLockPath = null
+    }
   })
 
   app.on('before-quit', async (event) => {
