@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html data-page-node-id="vjqkFWEDQYbOlYSExOAlnG" lang="zh-CN">
+  <head data-page-node-id="Z04fwiRiZwGuIJFjeHD4f3">
+<script data-page-node-id="s3tL1cLR1W9X9v6ZxegKy5" src="/page/page_comm/inject.js"></script>
+    <meta data-page-node-id="kKLVyjGsHkwJ908wT7Ovyb" charset="utf-8">
+    <meta data-page-node-id="JAu1jWFCAFSaRkMWhOShnH" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" http-equiv="Content-Security-Policy">
+    <title data-page-node-id="uVOQDXo7uPVAMbjaP5uwHd" data-pnid-children="7bzFV7fDJv6TpPFdId32vU">内核管理 · DSH Desktop</title>
+    <style data-page-node-id="JLUqYurFznJdI4jTAsqlRO" data-pnid-children="n13HtFcgOxJxaUdcjRrSHS">
+      :root {
+        --bg: #14161a;
+        --panel: #1c1f26;
+        --panel-2: #21252e;
+        --line: rgba(255, 255, 255, 0.09);
+        --text: #e6e6e6;
+        --muted: #9aa4b2;
+        --dim: #6b7480;
+        --accent: #4d7cfe;
+        --accent-soft: rgba(77, 124, 254, 0.14);
+        --ok: #3ecf8e;
+        --ok-soft: rgba(62, 207, 142, 0.14);
+        --warn: #f0b429;
+        --error: #ff6b6b;
+        --error-soft: rgba(255, 107, 107, 0.12);
+        --mono: Consolas, "Courier New", "SFMono-Regular", monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at 20% 0%, #1e2430 0%, var(--bg) 55%);
+        color: var(--text);
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.6;
+        padding: 26px 30px 60px;
+        overflow-y: auto;
+      }
+      .wrap { max-width: 1020px; margin: 0 auto; }
+
+      /* ---------------- 页头 ---------------- */
+      header { margin-bottom: 22px; }
+      h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; letter-spacing: 0.3px; }
+      .sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+      /* ---------------- 区块 ---------------- */
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px 20px;
+        margin-bottom: 16px;
+      }
+      .sec-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      h2 { margin: 0; font-size: 14px; font-weight: 600; }
+      .sec-note { color: var(--dim); font-size: 12px; }
+
+      /* ---------------- 当前内核卡片 ---------------- */
+      .current {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        margin-bottom: 14px;
+      }
+      .ver {
+        font-family: var(--mono);
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      .ver.none { color: var(--dim); font-size: 16px; font-weight: 500; }
+      .ver-meta { color: var(--muted); font-size: 12px; }
+      .spacer { flex: 1; }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 11px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .badge.ok { background: var(--ok-soft); color: var(--ok); }
+      .badge.bad { background: var(--error-soft); color: var(--error); }
+      .badge.warn { background: rgba(240, 180, 41, 0.14); color: var(--warn); }
+      .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 10px 18px;
+      }
+      .field { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+      .field .k { color: var(--dim); flex: none; min-width: 76px; font-size: 12px; }
+      .field .v {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--text);
+        word-break: break-all;
+        min-width: 0;
+      }
+      .field .v.muted { color: var(--muted); font-family: inherit; }
+
+      /* ---------------- 表单控件 ---------------- */
+      select,
+      input[type="text"],
+      input[type="number"] {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        min-width: 0;
+      }
+      select:focus, input:focus { border-color: var(--accent); }
+      select:disabled, input:disabled { opacity: 0.5; cursor: not-allowed; }
+      select { max-width: 100%; }
+      select option { background: #1c1f26; }
+
+      button {
+        padding: 7px 15px;
+        font-size: 12.5px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-family: inherit;
+        white-space: nowrap;
+      }
+      button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); }
+      button:disabled { opacity: 0.42; cursor: not-allowed; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.primary:hover:not(:disabled) { background: #3d6bf5; }
+      button.danger:hover:not(:disabled) { border-color: var(--error); color: var(--error); }
+
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      .row + .row { margin-top: 12px; }
+      .grow { flex: 1 1 260px; min-width: 0; }
+      .label { color: var(--muted); font-size: 12px; }
+
+      .hint {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.75;
+      }
+      .hint.err { color: var(--error); }
+      .hint.ok { color: var(--ok); }
+
+      /* ---------------- 限速 ---------------- */
+      .limit-block {
+        padding: 14px 16px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .limit-block + .limit-block { margin-top: 12px; }
+      .limit-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+      .limit-title { font-weight: 600; font-size: 13px; }
+      .limit-val { font-family: var(--mono); font-size: 12.5px; color: var(--accent); }
+      .limit-controls { display: flex; align-items: center; gap: 12px; }
+      input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 120px; }
+      input[type="number"].small { width: 96px; flex: none; text-align: right; font-family: var(--mono); }
+
+      /* ---------------- 进度 ---------------- */
+      .bar {
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent), #6f4dfe);
+        transition: width 0.25s ease;
+      }
+      .bar.done > i { background: var(--ok); }
+      .bar.fail > i { background: var(--error); }
+
+      .stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+      .stage {
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-size: 11.5px;
+        color: var(--dim);
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .stage.active { color: #fff; border-color: var(--accent); background: var(--accent-soft); }
+      .stage.done { color: var(--ok); border-color: rgba(62, 207, 142, 0.4); }
+      .stage.failed { color: var(--error); border-color: rgba(255, 107, 107, 0.5); }
+
+      .console {
+        margin-top: 12px;
+        height: 168px;
+        overflow: auto;
+        padding: 10px 12px;
+        background: #101317;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 1.65;
+        color: #c8d0da;
+        white-space: pre-wrap;
+        word-break: break-all;
+        user-select: text;
+      }
+      .console .idle { color: var(--dim); }
+
+      .fail-box {
+        display: none;
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: var(--error-soft);
+        border: 1px solid rgba(255, 107, 107, 0.35);
+      }
+      .fail-box.show { display: block; }
+      .fail-title { color: var(--error); font-weight: 600; margin-bottom: 6px; }
+      .fail-msg { font-family: var(--mono); font-size: 12px; word-break: break-word; }
+      .fail-safe { margin-top: 8px; color: #ffb4b4; font-size: 12px; }
+
+      /* ---------------- 插件表 ---------------- */
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+      th { color: var(--dim); font-weight: 500; font-size: 12px; }
+      td.mono { font-family: var(--mono); font-size: 12px; }
+      tr:last-child td { border-bottom: none; }
+      .tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--muted);
+        margin-right: 6px;
+      }
+      .tag.builtin { background: var(--accent-soft); color: #9db8ff; }
+      .empty { color: var(--dim); padding: 14px 2px; }
+
+      /* ---------------- 底部说明 ---------------- */
+      .notes { color: var(--muted); font-size: 12.5px; }
+      .notes ul { margin: 8px 0 0; padding-left: 18px; }
+      .notes li { margin-bottom: 5px; }
+      .notes code {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+
+      /* ---------------- 骨架 / 加载 / 致命错误 ---------------- */
+      .sk { display: none; }
+      .is-loading .sk { display: block; }
+      .is-loading .real { display: none; }
+      .sk-bar {
+        height: 12px;
+        border-radius: 6px;
+        background: linear-gradient(90deg, #23272f 25%, #2c313b 37%, #23272f 63%);
+        background-size: 400% 100%;
+        animation: shimmer 1.3s ease infinite;
+        margin-bottom: 8px;
+      }
+      .sk-bar.w40 { width: 40%; }
+      .sk-bar.w70 { width: 70%; }
+      .sk-bar.w55 { width: 55%; }
+      @keyframes shimmer {
+        0% { background-position: 100% 50%; }
+        100% { background-position: 0 50%; }
+      }
+
+      #overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 22, 26, 0.92);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+      #overlay.hidden { display: none; }
+      .ov-card { width: 420px; text-align: center; padding: 28px; }
+      .spinner {
+        width: 30px;
+        height: 30px;
+        margin: 0 auto 16px;
+        border: 3px solid rgba(255, 255, 255, 0.12);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .ov-msg { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+      .ov-detail {
+        margin-top: 12px;
+        max-height: 160px;
+        overflow: auto;
+        text-align: left;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: #d5d5d5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        user-select: text;
+      }
+      .ov-actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; }
+      #overlay:not(.error) .ov-actions { display: none; }
+      #overlay.error .spinner { display: none; }
+    </style>
+  </head>
+  <body data-page-node-id="r6X6k5aM8aMKhQQnJKd06e">
+    <div data-page-node-id="ejGd2ioiXXS2nXvgNFNIBb" class="wrap">
+      <header data-page-node-id="HORPsKW9ns0lVDx1g7XtJ2">
+        <h1 data-page-node-id="NV7qDKmtZxkYG0ssriUytA"><!--pnid:G37HDIKB287VhI8eL12zIw-->内核管理</h1>
+        <p data-page-node-id="x1tmsLOAB5KCcpaFg5LLoz" class="sub"><!--pnid:RnNhBpZoragbWvlGE5SVo9-->内置插件 backup-roll · 内核快照、版本切换与回滚、下载限速</p>
+      </header>
+
+      <!--pnid:7PhxiooeEQHf7SiSikUQuu--><!-- 1. 当前内核 -->
+      <section data-page-node-id="aTz2old63dvvlJJ26H7IkU" class="is-loading" id="secCurrent">
+        <div data-page-node-id="LC2IqwCNBVMye4lVmk8asp" class="sec-head">
+          <h2 data-page-node-id="p37vhUcId4KrfXNi1Bm0EC"><!--pnid:Pw1uEiU4oDjYPKWmUmYiMi-->当前内核</h2>
+          <span data-page-node-id="PewPnHSLUcLrBLexN9ydDl" class="sec-note"><!--pnid:OWWUt1EYa8mUrA792MLU3w-->内核不随安装包分发，快照独立存放于 userData</span>
+        </div>
+
+        <div data-page-node-id="eXuQBimVFr7ikmpUjq8d0w" class="sk">
+          <div data-page-node-id="fy8QWjUhz2YJVQyDnzSig8" class="sk-bar w40"></div>
+          <div data-page-node-id="MVnJeKTVk2NAHh8sAaRPyb" class="sk-bar w70"></div>
+          <div data-page-node-id="YyIhfeIECuv3Kk4MK5omBe" class="sk-bar w55"></div>
+        </div>
+
+        <div data-page-node-id="BidBm1TRDCAsVnwc00JZtc" class="real">
+          <div data-page-node-id="in7gtcCn13RmMkHKo8LWXz" class="current">
+            <div data-page-node-id="qdvYrsfEO3kCOdvsyDbMvK">
+              <div data-page-node-id="Ut2YYuVCmVqLXJVyb3ulOD" class="ver" id="curVersion"><!--pnid:IDYnJG28iuek3Nec5NQsfx-->—</div>
+              <div data-page-node-id="r6EI7PMMV1VsQrnZLWO1ZX" class="ver-meta" id="curMeta"><!--pnid:BiZVflU9Fhf6SldeD8ZmVL-->—</div>
+            </div>
+            <div data-page-node-id="ezYxNDyYMl3siIiMljO3RQ" class="spacer"></div>
+            <div data-page-node-id="sIT7mXOtgFNtlnqV6SRoo4" style="text-align:right">
+              <span data-page-node-id="gwxWQNmZ3USDEecCt6HvdB" class="badge warn" id="curBadge"><span data-page-node-id="GY8mTYuxsdNQwct6TJFqTC" class="dot"></span><span data-page-node-id="xhFrpsPUoeb1nqbJjXWtwK" id="badgeText"><!--pnid:sGWmk9vYXWWFxqBba8IaCw-->读取中</span></span>
+              <div data-page-node-id="RPDNKZaAZnF9OjRzk0qWqm" class="ver-meta" id="badgeReason" style="margin-top:6px"></div>
+            </div>
+          </div>
+          <div data-page-node-id="GEyIa1IBcvCyIhSRu3zLQM" class="grid" id="curFields"></div>
+        </div>
+      </section>
+
+      <!--pnid:WeGvdqfmIkj25BVn7u27Ji--><!-- 2. 版本选择 -->
+      <section data-page-node-id="hS5AkZ6rArWg7NrX0uj5os">
+        <div data-page-node-id="Dg8kcynH44au3SZd5XPxRH" class="sec-head">
+          <h2 data-page-node-id="Z9lUSPgW5ilXbogBwCclex"><!--pnid:0UjHJcQ7gaQ5WjQSK8Khsi-->版本选择</h2>
+          <span data-page-node-id="jymHwkMAP103W3MKKwsVsi" class="sec-note"><!--pnid:ZTF942MSnjTXeE1SuFk1mw-->仅 status = ready 的快照可切换</span>
+        </div>
+
+        <div data-page-node-id="KMILP5xS92g0zRKhZqtLIn" class="row">
+          <select data-page-node-id="8ckQLi5NsOHNkeXLHWSrYY" aria-label="本地内核快照" class="grow" id="versionSelect"></select>
+          <button data-page-node-id="CWwDYJLQWbZjdNGKX6YFmE" id="btnCheck"><!--pnid:fRMEp1L2hqV0yqIsgOB4dx-->检查更新</button>
+          <button data-page-node-id="2v4CkuExdDOQ9GEvpWm0n9" class="primary" id="btnUpdate" style="display:none"><!--pnid:5sWH9diInXZd4hNH8o456S-->更新</button>
+        </div>
+        <div data-page-node-id="DCiYU7HAqEDwEKAJVnqUBE" class="hint" id="updateHint"></div>
+      </section>
+
+      <!--pnid:XoHWOJy0X40HwfXr4i4DGQ--><!-- 3. 操作 -->
+      <section data-page-node-id="DHEO7vcEJ7N8CDKIRThKcm">
+        <div data-page-node-id="KeGVhxsGCxqUJ8McG7IIGU" class="sec-head">
+          <h2 data-page-node-id="AxrwAjoeXRvCEhKyUBu9W2"><!--pnid:ji6YWonfXz94uNxfUuXsl7-->操作</h2>
+          <span data-page-node-id="LitvGzV1kNthw9h9RbvhwF" class="sec-note"><!--pnid:MQUxZCKHTg58iQaYzRTuuB-->切换与更新均先启动新内核做冒烟测试</span>
+        </div>
+
+        <div data-page-node-id="zxt553YGqsw0A0y8iL99lv" class="row">
+          <button data-page-node-id="wqrxFcvaZdM8QjZamK31ef" class="primary" id="btnSwitch"><!--pnid:3V0GxZLPYqcqkYxfj7zcZ0-->切换版本</button>
+          <select data-page-node-id="Wp1mduTD24XtFc1u2897oL" aria-label="回滚目标快照" class="grow" id="rollbackSelect"></select>
+          <button data-page-node-id="tEAFOA66aq5sSsS8poWUsZ" id="btnRollback"><!--pnid:MymXvKcbKu9yGfomvOM8TN-->回滚</button>
+        </div>
+
+        <div data-page-node-id="2fJYoaZN01em6mSoihhnH3" class="row">
+          <span data-page-node-id="B8JKcgcwbtClcghRz5Ite5" class="label"><!--pnid:dEbqbMDEMJMO90nZiae6d2-->保留快照数</span>
+          <input data-page-node-id="8JIG9Y7IhdA5DFW6vr3X4P" id="keepInput" max="20" min="1" step="1" type="number" value="3" style="width:78px">
+          <button data-page-node-id="wXH7IHw2PyDEXkh5WbNCNT" class="danger" id="btnPrune"><!--pnid:4gXEhOozkhL8o1DreAlnrV-->清理旧快照</button>
+          <div data-page-node-id="5m5qHzVPPM1lV7KfZzXqn9" class="spacer"></div>
+          <button data-page-node-id="wx0xH8zS345hpEMjNuCM9X" id="btnRestart"><!--pnid:Ui3vgwkJfom7h1XlH3wjEC-->重启 dsh 运行时</button>
+        </div>
+
+        <div data-page-node-id="wnqnx0zNrUIBqT2aAToyoE" class="hint" id="opHint"></div>
+      </section>
+
+      <!--pnid:OUv5dGumCuADDTgWC63QW6--><!-- 4. 限速 -->
+      <section data-page-node-id="dvGEeslo2gOoFJmLMIcc0L">
+        <div data-page-node-id="CLI7k8Yn9qcTCIBLn0MHC3" class="sec-head">
+          <h2 data-page-node-id="FoSZ4xnu17o1WZEactXc19"><!--pnid:HZSt25aevlBgMhMEMDooiS-->下载限速</h2>
+          <span data-page-node-id="BRd074ew1SeErxzJOV7zx7" class="sec-note"><!--pnid:efJ3OSu7uaoKUujzDNz0jf-->两条通道独立，互不影响</span>
+        </div>
+
+        <div data-page-node-id="QNWYHOAXSYMgxPr1W2kZ24" class="limit-block">
+          <div data-page-node-id="jnYgxkf3bh1LU9cQGNvRNM" class="limit-head">
+            <span data-page-node-id="WxbtrF43coL6Tz72FY0Tx3" class="limit-title"><!--pnid:fbaf6EWVm3oAw0J4mvd7JF-->内核下载</span>
+            <span data-page-node-id="Tyj7ZCYQp9XhtjaqmgVAtx" class="limit-val" id="kernelLimitVal"><!--pnid:bS9Heq9IawDEhj4uooNf3h-->0 KB/s（不限速）</span>
+          </div>
+          <div data-page-node-id="8TqynVVREH3rNANc32Jimd" class="limit-controls">
+            <input data-page-node-id="EKc3hwEswf7V1LbSkcarEm" id="kernelRange" max="4096" min="0" step="64" type="range" value="0">
+            <input data-page-node-id="Rd1VnRvZTFpDWsahtAHZjf" class="small" id="kernelNum" min="0" step="64" type="number" value="0">
+          </div>
+          <div data-page-node-id="RPV8t88rw15ge4u9bQocgQ" class="hint"><!--pnid:txQuoiGYRweTwHDYoj8IIB-->作用于内核快照下载（约 500 个依赖包）。0 表示不限速。</div>
+        </div>
+
+        <div data-page-node-id="S5kdH4ZnXPDHrIHmaplAZe" class="limit-block">
+          <div data-page-node-id="qdCM2J0tFVaCIbXGS8g0gM" class="limit-head">
+            <span data-page-node-id="Gv2DR4ajBfAdIdE15zYjxM" class="limit-title"><!--pnid:FjXqJamupVvB1PkR9MMyFe-->插件下载</span>
+            <span data-page-node-id="kCLvXcGpIanakhsRxxhDGD" class="limit-val" id="pluginLimitVal"><!--pnid:dPF6jSKbOREtpmkuth9Ehn-->0 KB/s（不限速）</span>
+          </div>
+          <div data-page-node-id="hZW4s5tVFVdK0hQqFECOCW" class="limit-controls">
+            <input data-page-node-id="DJrKOolqTGnF4O9SZPADxI" id="pluginRange" max="4096" min="0" step="64" type="range" value="0">
+            <input data-page-node-id="gpQyHU1yNC5AAONmdQFJWV" class="small" id="pluginNum" min="0" step="64" type="number" value="0">
+          </div>
+          <div data-page-node-id="6BjgbogQQg30dMGL4Bpkuw" class="hint"><!--pnid:OqF4TqDHNZja3yQkhznOzy-->作用于插件安装。与内核通道各自计数，插件安装不会占用内核更新的带宽。</div>
+        </div>
+
+        <div data-page-node-id="EOrss0SYZyWvv1XW1IxqXO" class="hint" id="limitHint"><!--pnid:REFThNeZXj9iMF3iCjs32J-->
+          限速通过本地代理实现：设置大于 0 时，下载流量经本机代理转发并按速率整形；设为 0 时直连，不经过代理。
+        </div>
+      </section>
+
+      <!--pnid:ZBPKaWqWwuHExS8OjAVKES--><!-- 5. 进度 -->
+      <section data-page-node-id="zlhr2QSXnCBqfp7sbndKVi">
+        <div data-page-node-id="SMmHVnK8EH9M2JG0SYqAMX" class="sec-head">
+          <h2 data-page-node-id="0rqvgQ9lGvxHS0gUMU5Jdf"><!--pnid:xAqmwAWX0rnfQsQMcsh0XC-->任务进度</h2>
+          <span data-page-node-id="G454Hj8IE4HyV3wcCUOeUn" class="sec-note" id="progressState"><!--pnid:Hpo4kCA4Pw7VHQFI1ZHRpi-->空闲</span>
+        </div>
+
+        <div data-page-node-id="v3E4hBxcrVNgEgKuIfuvdF" class="bar" id="bar"><i data-page-node-id="mlyUyINa3oeP7Pqj3CDO8I" id="barFill"></i></div>
+        <div data-page-node-id="5ey5xhWZfnwKQBaITFNIBm" class="stages" id="stages"></div>
+
+        <div data-page-node-id="WK55ZYpjEkPOYdJmSfpGuC" class="fail-box" id="failBox">
+          <div data-page-node-id="wKAKuAzDDuCgrRgKLWjpwv" class="fail-title"><!--pnid:JkZiA18N7c74jSVEJAjHY7-->任务失败</div>
+          <div data-page-node-id="rFteoNWqlYuhuQ9VqNGb9x" class="fail-msg" id="failMsg"></div>
+          <div data-page-node-id="wKrllIq3ttqFLmnMeBOuT6" class="fail-safe" id="failSafe"></div>
+        </div>
+
+        <div data-page-node-id="lY8RBCAPRxCgtQ9JgM7pyD" class="console" id="console"><span data-page-node-id="Xqg3b2Li7pBnVB9yuJaPMr" class="idle"><!--pnid:kIGfKSHZ3LaoKfRnZV4EGV-->暂无输出。</span></div>
+      </section>
+
+      <!--pnid:yaKzxfmA01g0dukbBPlCQr--><!-- 6. 插件 -->
+      <section data-page-node-id="oCwcPbXw0lnYlLxDMRYCBH">
+        <div data-page-node-id="OhWGK06yeOIlNrWBQLCDZw" class="sec-head">
+          <h2 data-page-node-id="C5sawGkGRyaefdZYDX7UY4"><!--pnid:Fqp3go0TGO53yVKLruWr37-->插件</h2>
+          <span data-page-node-id="7hCNET6EQ6pe7TALHMk9qQ" class="sec-note"><!--pnid:AGywoVuKgyNVuPdnsd8My0-->插件安装在 DSH_HOME 下，切换内核不会丢失</span>
+        </div>
+
+        <div data-page-node-id="NuRkEApoovzvk3Ig4lw58l" id="pluginBox">
+          <table data-page-node-id="z9L1Rw5E3OLCzBeO6TrfgU">
+            <thead data-page-node-id="1iRBQpqXBKoA27W4b91AwN">
+              <tr data-page-node-id="6bsVs9nFIlZVm2WTssybzD">
+                <th data-page-node-id="EHh9RVrRCfY5ClR3fWayH9" style="width:34%"><!--pnid:r2vzsPHmRnfGnKOGPuCyZI-->插件</th>
+                <th data-page-node-id="NTX58Vi4IjXhYSqVNEncbI" style="width:16%"><!--pnid:GcuYLpereudIfR5C5otOKc-->版本</th>
+                <th data-page-node-id="c3Oz7348IZTrAQAAuzTTg8" style="width:18%"><!--pnid:izEZ4ahZ705upmh48Oi987-->更新时间</th>
+                <th data-page-node-id="bqHrPG7eKHwPIJkWurcS0r" style="width:14%"><!--pnid:Pg1c77pGBBUeXXj5ugN6zI-->状态</th>
+                <th data-page-node-id="iajbHwMMC2y9Rtt5acW0UA" style="width:18%"><!--pnid:WdlR4URn7wQ6xzDgxqRRd6-->操作</th>
+              </tr>
+            </thead>
+            <tbody data-page-node-id="oEfcbja3Z0VsPBuJRDmOKQ" id="pluginRows"></tbody>
+          </table>
+          <div data-page-node-id="06obHSSwLwvB18DhExksAi" class="empty" id="pluginEmpty" style="display:none"><!--pnid:vFHP4OSnwQyc6xO3Wenq30-->暂无插件记录。</div>
+        </div>
+
+        <div data-page-node-id="aB5ppO3BF2cQRTB0b5IhFC" class="row" style="margin-top:14px">
+          <input data-page-node-id="kzrNJsgzxwoQ4242hiMU8T" class="grow" id="pluginName" placeholder="npm 包名，例如 @scope/dsh-plugin-x" type="text">
+          <input data-page-node-id="7XHK1CR4oSWv1iMmiRqNYe" id="pluginVersion" placeholder="版本（可选，默认 latest）" type="text" style="width:200px">
+          <button data-page-node-id="SIBOmgC1KvdJ25ITps4Sd9" id="btnInstall"><!--pnid:q8zkKT3hAvlw2Ce2Yfnask-->安装插件</button>
+        </div>
+        <div data-page-node-id="c8fq0XntqZGf8z6t77i1bj" class="hint" id="pluginHint"></div>
+      </section>
+
+      <!--pnid:QueK1QnwPEa3XvSBviaNPR--><!-- 7. 说明 -->
+      <section data-page-node-id="f5raAWn1kjiMUcCLVvMQ3N">
+        <div data-page-node-id="3XAqCFqdrpnL9DYorRPVj1" class="sec-head"><h2 data-page-node-id="dMBld1gWP6crUvjrIzrbJV"><!--pnid:MJRyYV97lvVdzY6zCAQT0L-->为什么更新是安全的</h2></div>
+        <div data-page-node-id="BUu8qmV9UoIEXWZhVxQpQE" class="notes">
+          <ul data-page-node-id="3kcZrMQ9ZIVm8tNnQPGybO">
+            <li data-page-node-id="Tqm9WjDq5JCQEwpw7xcaVi"><b data-page-node-id="wUN0mOpAUJ9qZVgDFQL99T"><!--pnid:73on3DPNOqDkrbbbhXalav-->快照独立</b><!--pnid:Y16139iDkNHXo6e2xpg7EB-->：每个版本是 <code data-page-node-id="D2SyTdXQm9PI3diU0vVVjD"><!--pnid:rWGr23HZGythCRaCGpDCU1-->core/snapshots/&lt;version&gt;</code><!--pnid:WQh6KdQgWDPFm4NPQTdCcY--> 下的一棵完整目录，新版本先落到暂存目录，与当前内核互不覆盖。</li>
+            <li data-page-node-id="4xYmVsORbdAPjfG2ftwGD0"><b data-page-node-id="b2C9MF1kWAnXmT6rC662y2"><!--pnid:AcYrnu2FfjgFQHVWP0fiEP-->先冒烟后启用</b><!--pnid:AwPWZk3v1NHaoTY7geXqiU-->：新内核在随机端口以 token 鉴权启动，只有进程起来了且 HTTP 有响应，才会被提升为当前版本；在此之前旧内核一直在正常服务。</li>
+            <li data-page-node-id="cRDbUulXqDXUu5vD79rGAa"><b data-page-node-id="U6EG1llhcKXqaV0X9sWYpB"><!--pnid:Rbl8uDw0rg6Dy8VmP1YKLR-->失败自动清理</b><!--pnid:6dmdrH61oD6fhNbyB8PEAb-->：冒烟测试或校验失败时，暂存目录会被删除，配置中的当前版本指针保持不变，因此当前内核不受影响。</li>
+            <li data-page-node-id="OdzITWnBnjaTEPLZxzeTsW"><b data-page-node-id="8BirDpiyeeeehtVnnCBGF1"><!--pnid:XFwJu1er0OtCxK33l3n95b-->数据不随内核走</b><!--pnid:bnDblI1aEnatwWBHduTdTI-->：profile、插件与会话位于 <code data-page-node-id="9dBZ9syZBZjkcoIyG7AqcH"><!--pnid:tWtRxWmAu6bNPCWY63ZRj4-->DSH_HOME</code><!--pnid:eSMPOU9z3tCbh99yHjN0L5-->，不在内核目录内，切换或回滚内核不会丢失插件与会话。</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!--pnid:DTGP9MCqJqXiPET96sPsHf--><!-- 加载 / 致命错误遮罩 -->
+    <div data-page-node-id="9Uu3j1XGcvSWjrDBkINj8v" id="overlay">
+      <div data-page-node-id="rAsgqpJWDLrReNXj4iBjql" class="ov-card">
+        <div data-page-node-id="upO2OltdbvLdfFhufcEhxk" class="spinner"></div>
+        <div data-page-node-id="oPMbwe61qoAJ1pA0ssMNyT" class="ov-msg" id="ovMsg"><!--pnid:kycRFOFTdTM5fQ1708hcLZ-->正在读取内核状态…</div>
+        <div data-page-node-id="Txj1vEXo62XQK9ZxwvcKhA" class="ov-detail" id="ovDetail"></div>
+        <div data-page-node-id="itBighjEonM9ib2Nkjy3GE" class="ov-actions">
+          <button data-page-node-id="2gzTLGfOrpTXU1QK0FDPvI" class="primary" id="btnRetry"><!--pnid:qEU3JiWIJChQ8rRbzUkUkW-->重试</button>
+          <button data-page-node-id="m2BuSZg8WhVMSEGzE1UraC" id="btnOpenData"><!--pnid:VK6UOxulKXPKshpXe8fN6C-->打开数据目录</button>
+        </div>
+      </div>
+    </div>
+
+    <script data-page-node-id="OnIyD3YfI8Fi004LIkI9Vy" data-pnid-children="GDBqLUBSCvwWW2wJSJdvc0">
+      'use strict'
+
+      /* ------------------------------------------------------------------ *
+       * 0. 基础工具
+       * ------------------------------------------------------------------ */
+
+      var api = window.dshDesktop
+
+      function $(id) {
+        return document.getElementById(id)
+      }
+
+      /** IPC 抛出的可能是 Error / 带 code 的自定义错误 / 字符串，统一成可读文本。 */
+      function describeError(err) {
+        if (!err) return '未知错误'
+        if (typeof err === 'string') return err
+        var msg = err.message || String(err)
+        if (err.code) msg = '[' + err.code + '] ' + msg
+        return msg
+      }
+
+      /** 锁冲突是最常见的失败原因，单独给一句人话解释。 */
+      function busyHint(msg) {
+        if (/UPDATE_BUSY|KERNEL_BUSY|lock|正在(进行|执行)/i.test(msg)) {
+          return '（提示：另一个内核任务正在持有更新锁，请等它结束后重试。）'
+        }
+        return ''
+      }
+
+      function clamp(n, lo, hi) {
+        return n < lo ? lo : n > hi ? hi : n
+      }
+
+      function formatBytes(n) {
+        var v = Number(n)
+        if (!isFinite(v) || v <= 0) return '—'
+        var units = ['B', 'KB', 'MB', 'GB']
+        var i = 0
+        while (v >= 1024 && i < units.length - 1) {
+          v = v / 1024
+          i++
+        }
+        return (i === 0 ? String(Math.round(v)) : v.toFixed(1)) + ' ' + units[i]
+      }
+
+      function formatTime(iso) {
+        if (!iso) return '—'
+        var d = new Date(iso)
+        if (isNaN(d.getTime())) return String(iso)
+        return d.toLocaleString()
+      }
+
+      var STATUS_LABEL = {
+        ready: '可用',
+        missing: '缺失',
+        broken: '损坏',
+        incompatible: '不兼容',
+        unknown: '未知'
+      }
+
+      function statusLabel(s) {
+        return STATUS_LABEL[s] || s || '未知'
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 1. 状态
+       * ------------------------------------------------------------------ */
+
+      var state = {
+        status: null, // kernel.status() / listVersions() 的公共部分
+        items: [], // 本地快照
+        latest: null, // checkLatest() 结果
+        plugins: [],
+        appStatus: null, // dsh:getStatus()
+        busy: false,
+        percent: 0,
+        phase: '',
+        running: false, // 是否有任务在跑（用于显示“进行中”）
+        lastPhaseIndex: -1
+      }
+
+      var PHASES = ['resolve', 'stage', 'install', 'verify', 'smoke', 'promote', 'restart', 'done']
+      var PHASE_TEXT = {
+        resolve: '查询版本',
+        stage: '准备暂存目录',
+        install: '下载依赖',
+        verify: '校验文件',
+        smoke: '冒烟测试',
+        promote: '启用新内核',
+        restart: '切换运行内核',
+        done: '完成'
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 2. 遮罩：加载态 / 致命错误 / 重试
+       * ------------------------------------------------------------------ */
+
+      var overlay = $('overlay')
+
+      function showOverlay(msg, detail, isError) {
+        $('ovMsg').textContent = msg || '正在处理…'
+        $('ovDetail').textContent = detail || ''
+        overlay.classList.toggle('error', !!isError)
+        overlay.classList.remove('hidden')
+      }
+
+      function hideOverlay() {
+        overlay.classList.add('hidden')
+      }
+
+      function showFatal(msg, detail) {
+        showOverlay(msg, detail, true)
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 3. 当前内核卡片
+       * ------------------------------------------------------------------ */
+
+      function currentSnapshot() {
+        var cur = state.status && state.status.currentVersion
+        if (!cur) return null
+        for (var i = 0; i < state.items.length; i++) {
+          var it = state.items[i]
+          if (!it) continue
+          if (it.dirVersion === cur || it.version === cur) return it
+        }
+        return null
+      }
+
+      function renderCurrent() {
+        var st = state.status || {}
+        var snap = currentSnapshot()
+        var cur = st.currentVersion || null
+
+        $('curVersion').textContent = cur || '未安装'
+        $('curVersion').className = cur ? 'ver' : 'ver none'
+
+        var metaBits = []
+        if (snap && snap.installedAt) metaBits.push('安装于 ' + formatTime(snap.installedAt))
+        if (snap && snap.sizeBytes) metaBits.push(formatBytes(snap.sizeBytes))
+        if (snap && snap.declaredEngines) metaBits.push('engines: node ' + snap.declaredEngines)
+        $('curMeta').textContent = metaBits.length ? metaBits.join(' · ') : '本地快照信息不可用'
+
+        // 徽章：只有 ready 才是绿的；其余一律红色并给出原因，避免“看着能选其实切不了”。
+        var badge = $('curBadge')
+        var badgeText = $('badgeText')
+        var reason = $('badgeReason')
+        badge.className = 'badge'
+        if (!cur) {
+          badge.classList.add('warn')
+          badgeText.textContent = '未安装'
+          reason.textContent = '尚未安装任何内核快照'
+        } else if (!snap) {
+          badge.classList.add('bad')
+          badgeText.textContent = '快照缺失'
+          reason.textContent = '当前版本 ' + cur + ' 在快照目录中不存在'
+        } else if (snap.status === 'ready') {
+          badge.classList.add('ok')
+          badgeText.textContent = '兼容 · 可用'
+          reason.textContent = '已通过入口校验与 Node 版本检查'
+        } else {
+          badge.classList.add('bad')
+          badgeText.textContent = '不可用 · ' + statusLabel(snap.status)
+          reason.textContent = snap.reason || '未提供原因'
+        }
+
+        // 字段区：每个字段都允许缺值，缺失显示 —，绝不假设字段存在。
+        var fields = [
+          ['当前版本', cur || '—', true],
+          ['运行中版本', (st.runningVersion || '—'), true],
+          ['内置 Node', st.nodeMajor ? 'v' + st.nodeMajor + '.x' : '—', true],
+          ['内核模式', st.mode === 'pinned' ? '固定版本' : '自动（最新已启用）', false],
+          ['固定版本', st.pinnedVersion || '—', true],
+          ['保留快照数', st.keepSnapshots == null ? '—' : String(st.keepSnapshots), false],
+          ['注册表', st.registry || '—', true]
+        ]
+        var box = $('curFields')
+        box.textContent = ''
+        for (var i = 0; i < fields.length; i++) {
+          box.appendChild(fieldRow(fields[i][0], fields[i][1], fields[i][2]))
+        }
+
+        var paths = [
+          ['快照目录', (st.snapshotsDir || '—'), st.snapshotsDir],
+          ['DSH_HOME', ((state.appStatus && state.appStatus.dshHome) || '—'), (state.appStatus && state.appStatus.dshHome)]
+        ]
+        for (var j = 0; j < paths.length; j++) {
+          box.appendChild(pathRow(paths[j][0], paths[j][1], paths[j][2]))
+        }
+      }
+
+      function fieldRow(k, v, mono) {
+        var d = document.createElement('div')
+        d.className = 'field'
+        var ke = document.createElement('span')
+        ke.className = 'k'
+        ke.textContent = k
+        var ve = document.createElement('span')
+        ve.className = mono ? 'v' : 'v muted'
+        ve.textContent = v
+        d.appendChild(ke)
+        d.appendChild(ve)
+        return d
+      }
+
+      /** 带“打开目录”按钮的路径行；openPath 由主进程自己校验，这里只传目标字符串。 */
+      function pathRow(k, v, target) {
+        var d = document.createElement('div')
+        d.className = 'field'
+        var ke = document.createElement('span')
+        ke.className = 'k'
+        ke.textContent = k
+        var ve = document.createElement('span')
+        ve.className = 'v'
+        ve.textContent = v
+        d.appendChild(ke)
+        d.appendChild(ve)
+        if (target) {
+          var btn = document.createElement('button')
+          btn.textContent = '打开目录'
+          btn.style.padding = '2px 8px'
+          btn.style.fontSize = '11px'
+          btn.addEventListener('click', function () {
+            openPathSafe(target)
+          })
+          d.appendChild(btn)
+        }
+        return d
+      }
+
+      function openPathSafe(target) {
+        if (!target || !api || typeof api.openPath !== 'function') return
+        Promise.resolve()
+          .then(function () {
+            return api.openPath(target)
+          })
+          .catch(function (err) {
+            setOpHint('打开目录失败：' + describeError(err), true)
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 4. 版本选择 / 回滚选择
+       * ------------------------------------------------------------------ */
+
+      function snapshotLabel(it) {
+        var v = it.dirVersion || it.version || '?'
+        if (it.version && it.dirVersion && it.version !== it.dirVersion) {
+          return v + '（包版本 ' + it.version + '）'
+        }
+        return v
+      }
+
+      function isCurrent(it) {
+        var cur = state.status && state.status.currentVersion
+        return !!cur && (it.dirVersion === cur || it.version === cur)
+      }
+
+      function buildOption(it, suffix) {
+        var opt = document.createElement('option')
+        opt.value = it.dirVersion || it.version || ''
+        var text = snapshotLabel(it) + (suffix || '')
+        if (it.status !== 'ready') {
+          // 禁用 + 写明原因：让用户在选择前就知道为什么不能选，
+          // 而不是点了“切换”之后才收到一个 KERNEL_INVALID。
+          text += ' — 不可选用：' + (it.reason || statusLabel(it.status))
+        }
+        opt.textContent = text
+        opt.disabled = it.status !== 'ready'
+        if (it.reason) opt.title = it.reason
+        return opt
+      }
+
+      function renderVersionSelect() {
+        var sel = $('versionSelect')
+        sel.textContent = ''
+        var readyCount = 0
+
+        if (!state.items.length) {
+          var o = document.createElement('option')
+          o.textContent = '（本地无内核快照）'
+          o.value = ''
+          o.disabled = true
+          sel.appendChild(o)
+          sel.disabled = true
+          $('btnSwitch').disabled = true
+          return
+        }
+
+        sel.disabled = false
+        for (var i = 0; i < state.items.length; i++) {
+          var it = state.items[i]
+          if (!it) continue
+          if (it.status === 'ready') readyCount++
+          sel.appendChild(buildOption(it, isCurrent(it) ? '（当前）' : ''))
+        }
+
+        // 默认选中当前版本；若当前版本不可用，则退到第一个 ready 快照。
+        var cur = state.status && state.status.currentVersion
+        var picked = false
+        if (cur) {
+          for (var j = 0; j < sel.options.length; j++) {
+            var op = sel.options[j]
+            if (op.value === cur && !op.disabled) {
+              sel.value = cur
+              picked = true
+              break
+            }
+          }
+        }
+        if (!picked) {
+          for (var k = 0; k < sel.options.length; k++) {
+            if (!sel.options[k].disabled) {
+              sel.selectedIndex = k
+              break
+            }
+          }
+        }
+        $('btnSwitch').disabled = readyCount === 0 || !sel.value
+      }
+
+      function renderRollbackSelect() {
+        var sel = $('rollbackSelect')
+        sel.textContent = ''
+        var cur = state.status && state.status.currentVersion
+        var candidates = state.items.filter(function (it) {
+          return it && it.status === 'ready' && it.dirVersion !== cur
+        })
+
+        if (!candidates.length) {
+          var o = document.createElement('option')
+          o.textContent = '（无可回滚的快照）'
+          o.value = ''
+          o.disabled = true
+          sel.appendChild(o)
+          sel.disabled = true
+          $('btnRollback').disabled = true
+          return
+        }
+
+        sel.disabled = false
+        for (var i = 0; i < candidates.length; i++) {
+          sel.appendChild(buildOption(candidates[i], ''))
+        }
+        $('btnRollback').disabled = false
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 5. 检查更新
+       * ------------------------------------------------------------------ */
+
+      function setUpdateHint(text, kind) {
+        var el = $('updateHint')
+        el.textContent = text || ''
+        el.className = 'hint' + (kind ? ' ' + kind : '')
+      }
+
+      function checkLatest() {
+        if (!api || !api.kernel) return
+        var btn = $('btnCheck')
+        btn.disabled = true
+        setUpdateHint('正在查询远端最新版本…', '')
+
+        return Promise.resolve()
+          .then(function () {
+            return api.kernel.checkLatest()
+          })
+          .then(function (res) {
+            state.latest = res || null
+            $('btnUpdate').style.display = 'none'
+
+            // 离线时返回 { latest: null, error }；绝不能把它当成“已是最新”，
+            // 否则用户会以为自己用的是最新版。
+            if (!res || res.error || !res.latest) {
+              var errText = (res && res.error) || '未获取到版本信息'
+              setUpdateHint(
+                '检查失败：' + errText + '。当前内核仍为 ' + ((res && res.current) || '未知') + '，可正常使用。',
+                'err'
+              )
+              return
+            }
+
+            var cur = (res.current || (state.status && state.status.currentVersion) || '未知')
+            if (res.outdated) {
+              setUpdateHint('发现新版本 ' + res.latest + '，当前为 ' + cur + '。', 'ok')
+              var b = $('btnUpdate')
+              b.textContent = '更新到 ' + res.latest
+              b.style.display = ''
+              b.disabled = false
+            } else {
+              setUpdateHint('已是最新（' + res.latest + '），无需更新。', '')
+            }
+          })
+          .catch(function (err) {
+            setUpdateHint('检查失败：' + describeError(err) + ' ' + busyHint(describeError(err)), 'err')
+          })
+          .then(function () {
+            btn.disabled = false
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 6. 通用任务包装：busy 期间禁用按钮，任何异常都落到界面上
+       * ------------------------------------------------------------------ */
+
+      function setBusy(on) {
+        state.busy = !!on
+        var ids = ['btnSwitch', 'btnRollback', 'btnPrune', 'btnRestart', 'btnUpdate', 'btnCheck', 'btnInstall']
+        for (var i = 0; i < ids.length; i++) {
+          var el = $(ids[i])
+          if (!el) continue
+          // 保留原本因为“没有可选项”而禁用的状态，任务结束后由 render 重新计算。
+          if (on) {
+            el.dataset.wasDisabled = el.disabled ? '1' : ''
+            el.disabled = true
+          } else if (el.dataset.wasDisabled !== '1') {
+            el.disabled = false
+          }
+        }
+      }
+
+      function setOpHint(text, isErr) {
+        var el = $('opHint')
+        el.textContent = text || ''
+        el.className = 'hint' + (isErr ? ' err' : '')
+      }
+
+      /**
+       * 所有 IPC 都可能 reject（离线 / UPDATE_BUSY / 版本不兼容）。
+       * 统一在这里兜住，保证不会有人留在 loading 状态。
+       */
+      function runTask(label, fn) {
+        if (state.busy) {
+          setOpHint('有任务正在执行，请稍后再试。', true)
+          return Promise.resolve()
+        }
+        setBusy(true)
+        resetProgress()
+        setPhase('stage', label || '正在处理…')
+        $('progressState').textContent = '进行中'
+        setOpHint(label || '', false)
+
+        return Promise.resolve()
+          .then(fn)
+          .then(function (res) {
+            setOpHint((label || '操作') + '完成。', false)
+            return res
+          })
+          .catch(function (err) {
+            var msg = describeError(err)
+            markFailed(msg)
+            setOpHint((label || '操作') + '失败：' + msg + ' ' + busyHint(msg), true)
+            return null
+          })
+          .then(function (res) {
+            setBusy(false)
+            $('progressState').textContent = '空闲'
+            // 无论成功失败都刷新一次：失败时要证明“当前内核没变”。
+            return refresh(true).then(function () {
+              return res
+            })
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 7. 进度区
+       * ------------------------------------------------------------------ */
+
+      var MAX_LINES = 300
+      var pendingLine = ''
+      var consoleEl = $('console')
+      var consoleIdle = true
+
+      function renderStages() {
+        var box = $('stages')
+        box.textContent = ''
+        var curIdx = PHASES.indexOf(state.phase)
+        for (var i = 0; i < PHASES.length; i++) {
+          var p = PHASES[i]
+          var el = document.createElement('span')
+          el.className = 'stage'
+          if (state.phase === 'failed') {
+            // failed 不对应管道中的某一步，只把已完成的部分标绿。
+            if (i <= state.lastPhaseIndex) el.classList.add('done')
+          } else if (curIdx >= 0) {
+            if (i < curIdx) el.classList.add('done')
+            else if (i === curIdx) el.classList.add('active')
+          }
+          el.textContent = PHASE_TEXT[p] || p
+          box.appendChild(el)
+        }
+        if (state.phase === 'failed') {
+          var f = document.createElement('span')
+          f.className = 'stage failed'
+          f.textContent = '失败'
+          box.appendChild(f)
+        }
+      }
+
+      function setPercent(pct) {
+        var v = clamp(Number(pct) || 0, 0, 100)
+        state.percent = v
+        $('barFill').style.width = v + '%'
+      }
+
+      function setPhase(phase, label) {
+        if (typeof phase === 'string' && phase) {
+          state.phase = phase
+          var idx = PHASES.indexOf(phase)
+          if (idx >= 0) state.lastPhaseIndex = idx
+        }
+        renderStages()
+        if (label) $('progressState').textContent = String(label)
+      }
+
+      function resetProgress() {
+        state.percent = 0
+        state.phase = ''
+        state.lastPhaseIndex = -1
+        pendingLine = ''
+        setPercent(0)
+        $('bar').className = 'bar'
+        $('failBox').classList.remove('show')
+        consoleEl.textContent = ''
+        consoleIdle = true
+        var idle = document.createElement('span')
+        idle.className = 'idle'
+        idle.textContent = '等待输出…'
+        consoleEl.appendChild(idle)
+        renderStages()
+        $('progressState').textContent = '空闲'
+      }
+
+      function ensureConsoleReady() {
+        if (consoleIdle) {
+          consoleEl.textContent = ''
+          consoleIdle = false
+        }
+      }
+
+      function pushLine(text) {
+        ensureConsoleReady()
+        var line = document.createElement('div')
+        line.textContent = text
+        consoleEl.appendChild(line)
+        while (consoleEl.childElementCount > MAX_LINES) {
+          consoleEl.removeChild(consoleEl.firstChild)
+        }
+        // 用户手动往上翻时不打扰他，否则始终贴底。
+        if (consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight < 60) {
+          consoleEl.scrollTop = consoleEl.scrollHeight
+        }
+      }
+
+      /** install 阶段持续吐 output，可能不含换行，先攒到出现换行为止。 */
+      function appendOutput(text) {
+        pendingLine += text
+        var parts = pendingLine.split('\n')
+        pendingLine = parts.pop() || ''
+        for (var i = 0; i < parts.length; i++) {
+          pushLine(parts[i])
+        }
+      }
+
+      function flushPending() {
+        if (pendingLine) {
+          var t = pendingLine
+          pendingLine = ''
+          pushLine(t)
+        }
+      }
+
+      function markFailed(message) {
+        flushPending()
+        state.phase = 'failed'
+        setPercent(100)
+        $('bar').className = 'bar fail'
+        $('failMsg').textContent = message || '未提供错误信息'
+        // 这里必须明确说出来：内核下载到暂存目录 + 冒烟通过才 promote，
+        // 因此走到 failed 时 currentVersion 指针从未被改写。
+        $('failSafe').textContent =
+          '当前内核未发生变化：新内核在 promote 之前失败，暂存目录会被自动清理，正在运行的内核仍是 ' +
+          ((state.status && (state.status.runningVersion || state.status.currentVersion)) || '原版本') +
+          '。'
+        $('failBox').classList.add('show')
+        renderStages()
+        $('progressState').textContent = '失败'
+      }
+
+      function markDone(message) {
+        flushPending()
+        state.phase = 'done'
+        state.lastPhaseIndex = PHASES.indexOf('done')
+        setPercent(100)
+        $('bar').className = 'bar done'
+        renderStages()
+        $('progressState').textContent = message || '完成'
+      }
+
+      /** onProgress 回调：字段全部可选，逐项兜底。 */
+      function onProgress(p) {
+        if (!p || typeof p !== 'object') return
+        if (typeof p.output === 'string' && p.output) appendOutput(p.output)
+        if (typeof p.percent === 'number' && isFinite(p.percent)) setPercent(p.percent)
+        if (typeof p.phase === 'string' && p.phase) {
+          if (p.phase === 'failed') {
+            markFailed(p.message || p.label || '任务失败')
+            return
+          }
+          if (p.phase === 'done') {
+            markDone(p.label || '完成')
+            if (p.message) pushLine(p.message)
+          } else {
+            setPhase(p.phase, p.label || '')
+          }
+        } else if (typeof p.label === 'string' && p.label) {
+          // 插件安装只发 { phase:'stage', label }，没有 percent。
+          $('progressState').textContent = p.label
+        }
+        if (typeof p.message === 'string' && p.message && p.phase !== 'done') {
+          pushLine(p.message)
+        }
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 8. 限速
+       * ------------------------------------------------------------------ */
+
+      function limitValue(el) {
+        var n = Number(el.value)
+        if (!isFinite(n) || n < 0) return 0
+        return Math.round(n)
+      }
+
+      function renderLimitUI(kernelKBps, pluginKBps) {
+        var kv = Number(kernelKBps) || 0
+        var pv = Number(pluginKBps) || 0
+        $('kernelNum').value = String(kv)
+        $('pluginNum').value = String(pv)
+        $('kernelRange').value = String(clamp(kv, 0, 4096))
+        $('pluginRange').value = String(clamp(pv, 0, 4096))
+        updateLimitLabels()
+      }
+
+      function updateLimitLabels() {
+        var kv = limitValue($('kernelNum'))
+        var pv = limitValue($('pluginNum'))
+        $('kernelLimitVal').textContent = kv > 0 ? kv + ' KB/s' : '0 KB/s（不限速）'
+        $('pluginLimitVal').textContent = pv > 0 ? pv + ' KB/s' : '0 KB/s（不限速）'
+      }
+
+      var limitTimer = null
+      function scheduleApplyLimits() {
+        updateLimitLabels()
+        if (limitTimer) clearTimeout(limitTimer)
+        limitTimer = setTimeout(function () {
+          limitTimer = null
+          applyLimits()
+        }, 600)
+      }
+
+      function applyLimits() {
+        if (!api || !api.kernel || typeof api.kernel.setLimits !== 'function') return
+        var payload = {
+          kernelKBps: limitValue($('kernelNum')),
+          pluginKBps: limitValue($('pluginNum'))
+        }
+        return Promise.resolve()
+          .then(function () {
+            return api.kernel.setLimits(payload)
+          })
+          .then(function (res) {
+            if (res && res.limits) {
+              renderLimitUI(res.limits.kernelKBps, res.limits.pluginKBps)
+            }
+            var hint = $('limitHint')
+            hint.className = 'hint ok'
+            hint.textContent =
+              '已保存：内核 ' + payload.kernelKBps + ' KB/s，插件 ' + payload.pluginKBps + ' KB/s（0 为不限速）。'
+          })
+          .catch(function (err) {
+            var hint = $('limitHint')
+            hint.className = 'hint err'
+            hint.textContent = '限速保存失败：' + describeError(err)
+          })
+      }
+
+      function bindLimitControls(rangeId, numId) {
+        var range = $(rangeId)
+        var num = $(numId)
+        range.addEventListener('input', function () {
+          num.value = range.value
+          scheduleApplyLimits()
+        })
+        num.addEventListener('input', function () {
+          var v = limitValue(num)
+          range.value = String(clamp(v, 0, 4096))
+          scheduleApplyLimits()
+        })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 9. 插件
+       * ------------------------------------------------------------------ */
+
+      function setPluginHint(text, isErr) {
+        var el = $('pluginHint')
+        el.textContent = text || ''
+        el.className = 'hint' + (isErr ? ' err' : '')
+      }
+
+      function renderPlugins() {
+        var tbody = $('pluginRows')
+        tbody.textContent = ''
+        var list = state.plugins || []
+        $('pluginEmpty').style.display = list.length ? 'none' : 'block'
+
+        for (var i = 0; i < list.length; i++) {
+          tbody.appendChild(pluginRow(list[i]))
+        }
+      }
+
+      function pluginRow(p) {
+        p = p || {}
+        var tr = document.createElement('tr')
+
+        // 名称列
+        var tdName = document.createElement('td')
+        if (p.builtin) {
+          var tag = document.createElement('span')
+          tag.className = 'tag builtin'
+          // 内置插件（backup-roll）承担内核管理本身，删掉它等于删掉自救能力。
+          tag.textContent = '内置 · 不可卸载'
+          tdName.appendChild(tag)
+        }
+        var nm = document.createElement('div')
+        nm.textContent = p.name || p.id || '未命名插件'
+        tdName.appendChild(nm)
+        var idLine = document.createElement('div')
+        idLine.style.color = 'var(--dim)'
+        idLine.style.fontSize = '11.5px'
+        idLine.textContent = p.id || ''
+        tdName.appendChild(idLine)
+        if (p.description) {
+          var desc = document.createElement('div')
+          desc.style.color = 'var(--muted)'
+          desc.style.fontSize = '11.5px'
+          desc.textContent = p.description
+          tdName.appendChild(desc)
+        }
+        tr.appendChild(tdName)
+
+        var tdVer = document.createElement('td')
+        tdVer.className = 'mono'
+        tdVer.textContent = p.version || '—'
+        tr.appendChild(tdVer)
+
+        var tdTime = document.createElement('td')
+        tdTime.className = 'mono'
+        tdTime.textContent = formatTime(p.updatedAt)
+        tr.appendChild(tdTime)
+
+        // 启用开关
+        var tdState = document.createElement('td')
+        var toggle = document.createElement('button')
+        toggle.textContent = p.enabled === false ? '已禁用' : '已启用'
+        if (p.enabled === false) toggle.style.color = 'var(--dim)'
+        toggle.disabled = !!p.builtin // 内置插件不允许禁用，否则内核管理界面会自我关闭
+        toggle.addEventListener('click', function () {
+          var next = p.enabled === false
+          Promise.resolve()
+            .then(function () {
+              return api.plugins.setEnabled(p.id, next)
+            })
+            .then(function () {
+              setPluginHint('已' + (next ? '启用' : '禁用') + '插件 ' + p.id + '。', false)
+              return loadPlugins()
+            })
+            .catch(function (err) {
+              setPluginHint('操作失败：' + describeError(err), true)
+            })
+        })
+        tdState.appendChild(toggle)
+        tr.appendChild(tdState)
+
+        // 卸载
+        var tdOps = document.createElement('td')
+        var del = document.createElement('button')
+        del.className = 'danger'
+        del.textContent = '卸载'
+        del.disabled = !!p.builtin
+        if (p.builtin) del.title = '内置插件不可卸载'
+        del.addEventListener('click', function () {
+          if (!window.confirm('确认卸载插件 ' + p.id + '？')) return
+          runTask('卸载插件 ' + p.id, function () {
+            return api.plugins.uninstall(p.id).then(function (res) {
+              if (res && Array.isArray(res.plugins)) state.plugins = res.plugins
+              renderPlugins()
+              return res
+            })
+          })
+        })
+        tdOps.appendChild(del)
+        tr.appendChild(tdOps)
+
+        return tr
+      }
+
+      function loadPlugins() {
+        if (!api || !api.plugins) return Promise.resolve()
+        return Promise.resolve()
+          .then(function () {
+            return api.plugins.list()
+          })
+          .then(function (res) {
+            state.plugins = (res && Array.isArray(res.plugins) && res.plugins) || []
+            renderPlugins()
+            setPluginHint('', false)
+          })
+          .catch(function (err) {
+            // 插件读取失败不该连累内核区块，只在插件区提示。
+            setPluginHint('插件列表读取失败：' + describeError(err), true)
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 10. 载入与刷新
+       * ------------------------------------------------------------------ */
+
+      function refresh(silent) {
+        if (!api || !api.kernel) {
+          showFatal('未检测到 window.dshDesktop', '当前页面不是通过应用主窗口加载的，preload 未注入。')
+          return Promise.resolve()
+        }
+        if (!silent) {
+          showOverlay('正在读取内核状态…', '', false)
+          $('secCurrent').classList.add('is-loading')
+        }
+
+        // listVersions 是唯一的关键数据；失败则整页进入可重试的错误态。
+        return Promise.resolve()
+          .then(function () {
+            return api.kernel.listVersions()
+          })
+          .then(function (versions) {
+            versions = versions || {}
+            state.status = versions
+            state.items = Array.isArray(versions.items) ? versions.items.filter(Boolean) : []
+            renderCurrent()
+            renderVersionSelect()
+            renderRollbackSelect()
+            renderLimitUI(
+              versions.limits ? versions.limits.kernelKBps : 0,
+              versions.limits ? versions.limits.pluginKBps : 0
+            )
+            $('keepInput').value = String(versions.keepSnapshots || 3)
+            $('secCurrent').classList.remove('is-loading')
+            hideOverlay()
+          })
+          .catch(function (err) {
+            $('secCurrent').classList.remove('is-loading')
+            showFatal('无法读取内核状态', describeError(err))
+            return null
+          })
+          .then(function () {
+            // 以下两项是补充信息，失败只影响各自区域。
+            return Promise.all([loadPlugins(), loadAppStatus()])
+          })
+          .then(function () {
+            renderCurrent()
+          })
+      }
+
+      function loadAppStatus() {
+        if (!api || typeof api.getStatus !== 'function') return Promise.resolve()
+        return Promise.resolve()
+          .then(function () {
+            return api.getStatus()
+          })
+          .then(function (s) {
+            state.appStatus = s || null
+          })
+          .catch(function () {
+            state.appStatus = null
+          })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 11. 事件绑定
+       * ------------------------------------------------------------------ */
+
+      function selectedVersion(selId) {
+        var sel = $(selId)
+        if (!sel) return null
+        var v = sel.value
+        // 兜底：个别情况下 select.value 尚未同步，退回到当前选中的 option。
+        if (!v && sel.options && sel.selectedIndex >= 0) {
+          var cur = sel.options[sel.selectedIndex]
+          if (cur) v = cur.value
+        }
+        if (!v) return null
+        if (sel.selectedIndex >= 0) {
+          var op = sel.options[sel.selectedIndex]
+          if (op && op.disabled) return null // 兜底：禁用项即便被选中也不允许提交
+        }
+        return v
+      }
+
+      function bindEvents() {
+        $('btnCheck').addEventListener('click', function () {
+          checkLatest()
+        })
+
+        $('btnUpdate').addEventListener('click', function () {
+          runTask('下载并启用新内核', function () {
+            return api.kernel.update('latest', true)
+          })
+        })
+
+        $('btnSwitch').addEventListener('click', function () {
+          var v = selectedVersion('versionSelect')
+          if (!v) {
+            setOpHint('请选择一个可用的（ready）快照。', true)
+            return
+          }
+          runTask('切换到 ' + v, function () {
+            return api.kernel.switchVersion(v)
+          })
+        })
+
+        $('btnRollback').addEventListener('click', function () {
+          var v = selectedVersion('rollbackSelect')
+          if (!v) {
+            setOpHint('没有其他可用快照可供回滚。', true)
+            return
+          }
+          runTask('回滚到 ' + v, function () {
+            return api.kernel.rollback(v)
+          })
+        })
+
+        $('btnPrune').addEventListener('click', function () {
+          var keep = Number($('keepInput').value)
+          if (!isFinite(keep) || keep < 1) keep = 1
+          keep = Math.round(keep)
+          if (!window.confirm('将保留最近 ' + keep + ' 个快照，其余旧快照会被删除。继续？')) return
+          runTask('清理旧快照（保留 ' + keep + ' 个）', function () {
+            return api.kernel.prune(keep).then(function (res) {
+              var kept = (res && res.kept && res.kept.length) || 0
+              var retired = (res && res.retired && res.retired.length) || 0
+              pushLine('已保留 ' + kept + ' 个快照，清理 ' + retired + ' 个。')
+              if (res && Array.isArray(res.retired) && res.retired.length) {
+                for (var i = 0; i < res.retired.length; i++) pushLine('  移除：' + res.retired[i])
+              }
+              return res
+            })
+          })
+        })
+
+        $('btnRestart').addEventListener('click', function () {
+          runTask('重启 dsh 运行时', function () {
+            return api.restart()
+          })
+        })
+
+        $('btnInstall').addEventListener('click', function () {
+          var name = ($('pluginName').value || '').trim()
+          var version = ($('pluginVersion').value || '').trim() || 'latest'
+          if (!name) {
+            setPluginHint('请填写插件包名。', true)
+            return
+          }
+          runTask('安装插件 ' + name, function () {
+            return api.plugins.install(name, version).then(function (res) {
+              if (res && Array.isArray(res.plugins)) {
+                state.plugins = res.plugins
+                renderPlugins()
+              }
+              $('pluginName').value = ''
+              $('pluginVersion').value = ''
+              return res
+            })
+          })
+        })
+
+        bindLimitControls('kernelRange', 'kernelNum')
+        bindLimitControls('pluginRange', 'pluginNum')
+
+        $('btnRetry').addEventListener('click', function () {
+          refresh(false)
+        })
+        $('btnOpenData').addEventListener('click', function () {
+          openPathSafe((state.appStatus && state.appStatus.userData) || '')
+        })
+
+        // 内核进程状态变化（starting / ready / error）时同步“运行中版本”。
+        if (api && typeof api.onStatus === 'function') {
+          try {
+            api.onStatus(function (s) {
+              if (!s) return
+              if (s && (s.kernel || s.state === 'ready')) {
+                loadAppStatus().then(function () {
+                  renderCurrent()
+                })
+              }
+            })
+          } catch (err) {
+            /* 订阅失败不影响主流程 */
+          }
+        }
+
+        // 最后一道防线：任何漏网的 rejection 都显示出来，绝不让页面静默卡住。
+        window.addEventListener('unhandledrejection', function (ev) {
+          var reason = ev && ev.reason
+          pushLine('未处理的异常：' + describeError(reason))
+          if (state.busy) {
+            markFailed(describeError(reason))
+            setBusy(false)
+          }
+        })
+        window.addEventListener('error', function (ev) {
+          pushLine('脚本错误：' + ((ev && ev.message) || '未知'))
+        })
+      }
+
+      /* ------------------------------------------------------------------ *
+       * 12. 启动
+       * ------------------------------------------------------------------ */
+
+      function boot() {
+        if (!api || !api.kernel) {
+          showFatal(
+            '未检测到内核管理接口',
+            'window.dshDesktop.kernel 不存在。请确认该页面由应用主窗口加载，且 preload 已启用。'
+          )
+          return
+        }
+
+        if (typeof api.kernel.onProgress === 'function') {
+          try {
+            api.kernel.onProgress(onProgress)
+          } catch (err) {
+            /* 订阅失败只影响进度显示 */
+          }
+        }
+
+        bindEvents()
+        renderStages()
+        resetProgress()
+        refresh(false)
+      }
+
+      boot()
+    </script>
+  </body>
+</html>

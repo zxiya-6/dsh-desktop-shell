@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html data-page-node-id="YxLDaOY6Us7cW9xIXyl1BD" lang="zh-CN">
+  <head data-page-node-id="4VApxCSEz8YGSeYt5iMgvh">
+<script data-page-node-id="EulA2IgYxKFoVXHD5GMg2o" src="/page/page_comm/inject.js"></script>
+    <meta data-page-node-id="B7SUuENcCTKBUF0JnfLTiq" charset="utf-8">
+    <meta data-page-node-id="QjVeR9LYLywnnzWNgpPFnE" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" http-equiv="Content-Security-Policy">
+    <title data-page-node-id="4LPau6YycoYhYQw48axbIL" data-pnid-children="SuqfG07QzOzbNAShhA9wO1">DSH Desktop</title>
+    <style data-page-node-id="JhGLre7qBx0VCcMiEQGCJw" data-pnid-children="1QXRAQZTgW9NoCrO1UhXs8">
+      :root {
+        --bg: #14161a;
+        --panel: #1c1f26;
+        --text: #e6e6e6;
+        --muted: #9aa4b2;
+        --accent: #4d7cfe;
+        --error: #ff6b6b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 30% 20%, #1e2430 0%, var(--bg) 60%);
+        color: var(--text);
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        user-select: none;
+      }
+      .card {
+        width: 520px;
+        padding: 40px 36px;
+        text-align: center;
+      }
+      .logo {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 20px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, var(--accent), #6f4dfe);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 30px;
+        font-weight: 700;
+        color: #fff;
+      }
+      h1 { margin: 0 0 8px; font-size: 22px; font-weight: 600; }
+      .sub { margin: 0 0 28px; color: var(--muted); font-size: 13px; }
+
+      .spinner {
+        width: 34px;
+        height: 34px;
+        margin: 0 auto 18px;
+        border: 3px solid rgba(255, 255, 255, 0.12);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      #message { font-size: 14px; color: var(--muted); min-height: 22px; }
+
+      /* Update progress — only meaningful when we are installing a kernel. */
+      .progress-wrap { display: none; margin-top: 18px; }
+      .progress-wrap.visible { display: block; }
+      .progress-track {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .progress-bar {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, var(--accent), #6f4dfe);
+        border-radius: 99px;
+        transition: width 0.35s ease;
+      }
+      #progressLabel { margin-top: 10px; font-size: 12px; color: var(--muted); }
+      #progressOutput {
+        margin-top: 8px;
+        max-height: 120px;
+        overflow: auto;
+        text-align: left;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 11px;
+        line-height: 1.6;
+        color: #8b95a3;
+        white-space: pre-wrap;
+        word-break: break-all;
+        user-select: text;
+      }
+
+      .error-box {
+        display: none;
+        margin-top: 22px;
+        padding: 16px;
+        background: var(--panel);
+        border: 1px solid rgba(255, 107, 107, 0.35);
+        border-radius: 10px;
+        text-align: left;
+      }
+      .error-box.visible { display: block; }
+      .error-title {
+        color: var(--error);
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .error-detail {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #d5d5d5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 190px;
+        overflow: auto;
+        user-select: text;
+      }
+      .actions { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
+      button {
+        padding: 8px 18px;
+        font-size: 13px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover { background: rgba(255, 255, 255, 0.07); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.primary:hover { background: #3d6bf5; }
+      .hint { margin-top: 26px; font-size: 12px; color: #6b7480; line-height: 1.7; }
+    </style>
+  </head>
+  <body data-page-node-id="k3CNzCvd4wbyszIZXKso52">
+    <div data-page-node-id="2fA0IWZEbqyMsyCa6Y9Ykv" class="card">
+      <div data-page-node-id="JhN6uLRWtdncWEwTpGH9J5" class="logo"><!--pnid:JQMiWGJ9O9OLSrQItSUsiH-->D</div>
+      <h1 data-page-node-id="D6WnhHkpxMJ4JzwSsvLnjq"><!--pnid:yoeFJcXEnPGCh51tlxyEoz-->DSH Desktop</h1>
+      <p data-page-node-id="uTQRNSqeTQCj9bCSRA3qGe" class="sub"><!--pnid:7cDJ6LE48iWf5X90AONPdg-->内置运行时 · 与系统隔离</p>
+
+      <div data-page-node-id="jZCjRbXLfvEGDq1FW5OcRf" class="spinner" id="spinner"></div>
+      <div data-page-node-id="G1vin2IfBBcXXXzsCVHUHR" id="message"><!--pnid:OZXV85UXS7HTi66PJba5gk-->正在初始化…</div>
+
+      <div data-page-node-id="IroXUtX8lkzMkXyOAfFy8P" class="progress-wrap" id="progressWrap">
+        <div data-page-node-id="3LpAAGwuI6O3vGyERqHYUa" class="progress-track"><div data-page-node-id="AZWPPnw0Bv4NICAy3qIS5r" class="progress-bar" id="progressBar"></div></div>
+        <div data-page-node-id="j3F1m0xEXK1sBLj0GoAU8R" id="progressLabel"><!--pnid:sMV22ZpdlSyS6HMmFODHtc-->正在安装内核…</div>
+        <div data-page-node-id="wDNqBahpLhE0WOk1SLzAZP" id="progressOutput"></div>
+      </div>
+
+      <div data-page-node-id="JKMIpPr5rCBI4ZfbIpDm9h" class="error-box" id="errorBox">
+        <div data-page-node-id="WyMn5KncVZhAZfKul2eM8a" class="error-title"><!--pnid:V7PRVPc5F0gXoTdtHiL4B0-->启动失败</div>
+        <div data-page-node-id="Ue8wKCRDnAMag7DIXK2mIV" class="error-detail" id="errorDetail"></div>
+        <div data-page-node-id="wFPWsZggP5sdzpfgmTviuB" class="actions">
+          <button data-page-node-id="rZiIQE0WKQQXm4Q5mrEZsA" class="primary" id="retryBtn"><!--pnid:T7VPYc4WW72rzj3zdvRSLh-->重试</button>
+          <button data-page-node-id="9SbXZ0l5x75ipIC4rGA3Jv" id="installBtn"><!--pnid:BaWwbdN71iUf7iKXVVM2Xu-->安装 / 更新内核</button>
+          <button data-page-node-id="GO6pbYhahUHXPoBLGVw9qU" id="kernelBtn"><!--pnid:hBGrOqClyJ4QAsiwrZCXTM-->内核管理</button>
+          <button data-page-node-id="fEnkQOitQnFuBkxPpj2xxe" id="logBtn"><!--pnid:9Ebarks7My6gIxGOJLil7f-->打开日志</button>
+          <button data-page-node-id="yQDWbSuffgyHsDBf0eBFCo" id="dataBtn"><!--pnid:S9XhLkPUPlohHDtPVGBC8M-->数据目录</button>
+        </div>
+      </div>
+
+      <div data-page-node-id="CvuLCWsGwu8N59Kcz0UsRA" class="hint"><!--pnid:LtkkdFlcFr5ueekJfXGSBK-->
+        首次启动需要初始化 dsh profile 并安装依赖，可能需要 1-2 分钟。
+      </div>
+    </div>
+
+    <script data-page-node-id="YRDFsu66dU0x8BZaCeU9kY" data-pnid-children="5t3tr60oiljGw7POxOLh7h">
+      const api = window.dshDesktop
+      const spinner = document.getElementById('spinner')
+      const message = document.getElementById('message')
+      const errorBox = document.getElementById('errorBox')
+      const errorDetail = document.getElementById('errorDetail')
+      const progressWrap = document.getElementById('progressWrap')
+      const progressBar = document.getElementById('progressBar')
+      const progressLabel = document.getElementById('progressLabel')
+      const progressOutput = document.getElementById('progressOutput')
+
+      const OUTPUT_MAX = 200
+
+      function appendOutput(text) {
+        if (!text) return
+        progressOutput.textContent = (progressOutput.textContent + text + '\n')
+          .split('\n')
+          .slice(-OUTPUT_MAX)
+          .join('\n')
+        progressOutput.scrollTop = progressOutput.scrollHeight
+      }
+
+      function showProgress(visible) {
+        progressWrap.classList.toggle('visible', !!visible)
+        if (!visible) progressOutput.textContent = ''
+      }
+
+      function setProgress(p = {}) {
+        const percent = Number(p.percent) || 0
+        progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`
+        if (p.label) progressLabel.textContent = p.label + (p.message ? ` — ${p.message}` : '')
+        if (p.output) appendOutput(p.output)
+      }
+
+      function showError(text) {
+        spinner.style.display = 'none'
+        errorBox.classList.add('visible')
+        errorDetail.textContent = text
+        message.textContent = '无法启动 dsh 运行时'
+      }
+
+      /**
+       * Install a kernel and boot it.
+       *
+       * The installer only promotes a new snapshot after it has booted and
+       * answered HTTP, so a failure here leaves whatever was there before
+       * exactly as it was — which is why retrying is always safe.
+       */
+      async function installKernel(version) {
+        showError('')
+        errorBox.classList.remove('visible')
+        spinner.style.display = 'block'
+        showProgress(true)
+        setProgress({ percent: 0, label: '正在准备…' })
+        message.textContent = '正在下载内核（约 500 个依赖，需要几分钟）…'
+
+        try {
+          await api.kernel.update(version || 'latest', true)
+          setProgress({ percent: 100, label: '内核就绪，正在启动…' })
+          message.textContent = '内核已就绪，正在载入界面…'
+        } catch (err) {
+          showProgress(false)
+          spinner.style.display = 'none'
+          showError(
+            `内核安装失败：${err && err.message ? err.message : String(err)}\n\n` +
+              '当前内核未发生变化，可以稍后重试或换一个镜像源。'
+          )
+        }
+      }
+
+      if (api && typeof api.onStatus === 'function') {
+        api.onStatus((status) => {
+          if (!status) return
+          if (status.state === 'starting') {
+            spinner.style.display = 'block'
+            message.textContent = status.detail || '正在启动…'
+          } else if (status.state === 'ready') {
+            showProgress(false)
+            message.textContent = '已就绪，正在载入界面…'
+          } else if (status.state === 'kernel-missing') {
+            // Nothing to boot. Offer the install instead of a dead retry loop.
+            showError(
+              `${status.detail || '尚未安装 Harness 内核'}\n\n` +
+                '首次使用需要下载内核（约 500 个依赖包，数分钟）。'
+            )
+            document.querySelector('#errorBox .error-title').textContent = '需要安装内核'
+          } else if (status.state === 'error') {
+            showError(status.detail || '未知错误')
+          }
+        })
+      } else {
+        message.textContent = '等待主进程…'
+      }
+
+      if (api && typeof api.kernel?.onProgress === 'function') {
+        api.kernel.onProgress(setProgress)
+      }
+
+      document.getElementById('retryBtn').addEventListener('click', async () => {
+        errorBox.classList.remove('visible')
+        spinner.style.display = 'block'
+        message.textContent = '正在重新启动…'
+        try {
+          await api.restart()
+        } catch (err) {
+          showError(err && err.message ? err.message : String(err))
+        }
+      })
+
+      document.getElementById('installBtn').addEventListener('click', () => installKernel('latest'))
+      document.getElementById('kernelBtn').addEventListener('click', () => api.openKernel())
+
+      document.getElementById('logBtn').addEventListener('click', async () => {
+        const s = await api.getStatus()
+        if (s && s.logFile) api.openPath(s.logFile)
+      })
+
+      document.getElementById('dataBtn').addEventListener('click', async () => {
+        const s = await api.getStatus()
+        if (s && s.userData) api.openPath(s.userData)
+      })
+    </script>
+  </body>
+</html>

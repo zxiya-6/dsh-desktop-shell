@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html data-page-node-id="SjN2JhooZuM9N0l3uyvB2Z" lang="zh-CN">
+  <head data-page-node-id="EGLeX3VyUSFoAUJz4R3xiZ">
+<script data-page-node-id="wEXZy9guJoeDHS4TyERsnL" src="/page/page_comm/inject.js"></script>
+    <meta data-page-node-id="RjtdyAi4MwG8OQjQPD8CX9" charset="utf-8">
+    <meta data-page-node-id="vyZyDzpYdkTW0yt5VfeF5f" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:" http-equiv="Content-Security-Policy">
+    <title data-page-node-id="AEMTf6hRbb3zbaJRdAm9Bn" data-pnid-children="GVDEFLnmVWDpCk91mmMcMf">终端 — DSH Desktop</title>
+    <link data-page-node-id="q3hKrdO2ybfNJ5AOo4HZtC" href="vendor/xterm.css" rel="stylesheet">
+    <style data-page-node-id="vqYmxo5WYI6LcmKEA0tUme" data-pnid-children="KtpC2p8yUQmB6nitzIBHL5">
+      :root {
+        --bg: #0d0d0d;
+        --bar: #16181d;
+        --border: #262a32;
+        --text: #d8dee9;
+        --muted: #7c8695;
+        --accent: #4d7cfe;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+        font-size: 13px;
+      }
+
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 14px;
+        background: var(--bar);
+        border-bottom: 1px solid var(--border);
+        flex: 0 0 auto;
+      }
+      .badge {
+        padding: 3px 9px;
+        border-radius: 5px;
+        background: rgba(77, 124, 254, 0.16);
+        color: #9db8ff;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .meta { color: var(--muted); font-size: 12px; }
+      .meta code {
+        font-family: Consolas, "Courier New", monospace;
+        color: #b9c3d1;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .spacer { flex: 1; }
+      .tips { color: #5f6875; font-size: 11.5px; }
+
+      #terminal { flex: 1 1 auto; padding: 6px 0 0 8px; min-height: 0; }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 12px;
+        background: var(--bg);
+        color: var(--muted);
+        padding: 40px;
+        text-align: center;
+        line-height: 1.7;
+      }
+      .overlay.hidden { display: none; }
+      .overlay .err { color: #ff6b6b; font-weight: 600; }
+      .overlay code {
+        font-family: Consolas, "Courier New", monospace;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: #cbd5e1;
+      }
+    </style>
+  </head>
+  <body data-page-node-id="XHYmPQjrwJyKePjKSwtslG">
+    <div data-page-node-id="ljRpJLdSpm3IY7iatFbVE7" class="bar">
+      <span data-page-node-id="WnYOAfu70ZsL7uNZX9zTMB" class="badge" id="shellBadge"><!--pnid:i2vAHyPBqEl6KyHsALdb7B-->终端</span>
+      <span data-page-node-id="MVfUVC0lDmDeKP9zWqPaQb" class="meta" id="shellMeta"><!--pnid:BfbofqZcZBaAQhXynyZRYQ-->检测中…</span>
+      <span data-page-node-id="DKwy7HH7zFfNgink0anNBt" class="spacer"></span>
+      <span data-page-node-id="OTVW9bJo3F6UoUyxFCQRU2" class="tips"><!--pnid:JpKCiEHHGwr53Q18fYq4fx-->
+        依赖更新：<code data-page-node-id="uFiMWQtzwNSpOnYo8zsOe0"><!--pnid:sblsyrJ1wJmYjZ05MSBL4N-->dsh plugin --profile web add &lt;pkg&gt;</code>
+      </span>
+    </div>
+
+    <div data-page-node-id="v7fiVcOIlDufuGMhwqro4s" id="terminal"></div>
+
+    <div data-page-node-id="eo7Hv1Pft3Ahbn1SKM1NXq" class="overlay" id="overlay">
+      <div data-page-node-id="XLY7W9i4IfLbR5hfallGvL" id="overlayText"><!--pnid:eXhFejdSiMO6GLrN44tcLL-->正在启动终端…</div>
+    </div>
+
+    <script data-page-node-id="hf6mLANFasB4qRIJczeiYm" src="vendor/xterm.js"></script>
+    <script data-page-node-id="8PXTvGFyH0VbUxTmNyzY42" src="vendor/addon-fit.js"></script>
+    <script data-page-node-id="Eh1p3pSxu7tPFxjmWI62yn" src="vendor/addon-web-links.js"></script>
+    <script data-page-node-id="miOWg9DFGIoV4Ee77VWsaH" data-pnid-children="dFTIwuY0oVvlUIGB3qXpAx">
+      ;(async function () {
+        const api = window.dshDesktop
+        const overlay = document.getElementById('overlay')
+        const overlayText = document.getElementById('overlayText')
+        const badge = document.getElementById('shellBadge')
+        const meta = document.getElementById('shellMeta')
+
+        if (!api || !api.terminal) {
+          overlayText.innerHTML = '<span class="err">桥接不可用</span><br>preload 未加载。'
+          return
+        }
+
+        let info
+        try {
+          info = await api.terminal.available()
+        } catch (err) {
+          overlayText.innerHTML = '<span class="err">无法查询终端状态</span><br>' + String(err)
+          return
+        }
+
+        if (!info.available) {
+          overlayText.innerHTML =
+            '<span class="err">终端不可用</span><br>' +
+            (info.reason || 'node-pty 未加载') +
+            '<br><br>请重新安装应用，或确认 node-pty 原生模块编译成功。'
+          return
+        }
+
+        const shell = info.shell || {}
+        badge.textContent = shell.label || '终端'
+        meta.innerHTML =
+          (shell.version ? `版本 <code>${shell.version}</code> · ` : '') +
+          `路径 <code>${shell.path || '未知'}</code>`
+
+        const term = new Terminal({
+          fontFamily: 'Consolas, "Courier New", monospace',
+          fontSize: 13,
+          cursorBlink: true,
+          convertEol: true,
+          theme: {
+            background: '#0d0d0d',
+            foreground: '#d8dee9',
+            cursor: '#4d7cfe',
+            selectionBackground: 'rgba(77,124,254,0.3)'
+          }
+        })
+
+        const fitAddon = new FitAddon.FitAddon()
+        term.loadAddon(fitAddon)
+        try {
+          term.loadAddon(new WebLinksAddon.WebLinksAddon())
+        } catch (e) {
+          /* web-links is optional */
+        }
+
+        term.open(document.getElementById('terminal'))
+
+        const sessionId = 'term-' + Date.now()
+
+        const ro = new ResizeObserver(() => {
+          try {
+            fitAddon.fit()
+            api.terminal.resize(sessionId, term.cols, term.rows)
+          } catch (e) {
+            /* ignore transient resize failures */
+          }
+        })
+        ro.observe(document.getElementById('terminal'))
+
+        term.onData((data) => api.terminal.write(sessionId, data))
+
+        api.terminal.onData(sessionId, (data) => term.write(data))
+        api.terminal.onExit(sessionId, (info2) => {
+          const code = info2 && info2.code !== undefined ? info2.code : '?'
+          term.writeln(`\r\n[进程已退出，代码 ${code}]`)
+        })
+
+        try {
+          fitAddon.fit()
+          const created = await api.terminal.create(sessionId, term.cols, term.rows)
+          overlay.classList.add('hidden')
+          term.focus()
+
+          if (created && created.shell) {
+            badge.textContent = created.shell.label || badge.textContent
+          }
+        } catch (err) {
+          overlayText.innerHTML =
+            '<span class="err">终端启动失败</span><br>' + (err && err.message ? err.message : String(err))
+        }
+
+        window.addEventListener('beforeunload', () => {
+          try {
+            api.terminal.dispose(sessionId)
+          } catch (e) {
+            /* ignore */
+          }
+        })
+      })()
+    </script>
+  </body>
+</html>
