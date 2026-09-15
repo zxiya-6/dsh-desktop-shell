@@ -15,6 +15,28 @@ function exists(p) {
   return fs.existsSync(path.join(root, p))
 }
 
+/**
+ * Restore .npmrc from npmrc.sample when it is missing.
+ *
+ * Dotfiles are routinely dropped in transit — by zip payloads, by some sync
+ * tools, by people copying a folder over SMB. Without this file `npm install`
+ * silently produces a tree with no native binaries, which only fails later at
+ * runtime. Keeping a non-dot sample next to it means the one that matters can
+ * always be recovered.
+ */
+function ensureNpmrc() {
+  const target = path.join(root, '.npmrc')
+  const sample = path.join(root, 'npmrc.sample')
+  if (fs.existsSync(target) || !fs.existsSync(sample)) return null
+  fs.copyFileSync(sample, target)
+  return target
+}
+
+const restoredNpmrc = ensureNpmrc()
+if (restoredNpmrc) {
+  console.log(`[OK  ] npmrc restored from npmrc.sample -> ${path.relative(root, restoredNpmrc)}`)
+}
+
 const checks = [
   {
     name: 'pnpm (bundled, used for kernel & plugin installs)',

@@ -260,5 +260,44 @@ function scenario(name) {
   })
 }
 
+/* ------------------------------------------------------------------ *
+ * 6. App updater gating: dormant until somebody ships a release
+ * ------------------------------------------------------------------ */
+{
+  const { tmp, config } = scenario('6. 应用自更新的启用门槛')
+
+  const { AppUpdater } = require('../src/main/app-updater')
+  const app = { isPackaged: false, getVersion: () => '0.1.0' }
+  const updater = new AppUpdater({ config, app })
+
+  check('开发态一律不检查更新', () => {
+    assert.equal(updater.availability().ok, false)
+    assert.equal(updater.snapshot().status, 'idle')
+    return updater.availability().reason
+  })
+
+  check('打包但未配置源 → 仍停用', () => {
+    app.isPackaged = true
+    assert.equal(updater.availability().ok, false)
+    assert.ok(updater.snapshot().reason.includes('updateUrl'))
+    return updater.snapshot().reason
+  })
+
+  check('更新源拒绝非 http(s)', () => {
+    assert.throws(() => updater.setUpdateUrl('file:///tmp/updates'), /http\(s\)/)
+    assert.throws(() => updater.setUpdateUrl('not-a-url'), /http\(s\)/)
+    return 'file:// 与非 URL 均被拒'
+  })
+
+  check('配置合法源后启用', () => {
+    const state = updater.setUpdateUrl('https://example.com/desktop-updates')
+    assert.equal(state.enabled, true)
+    assert.equal(updater.availability().ok, true)
+    return state.updateUrl
+  })
+
+  fs.rmSync(tmp, { recursive: true, force: true })
+}
+
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'} — ${passed} passed, ${failed} failed\n`)
 process.exit(failed === 0 ? 0 : 1)

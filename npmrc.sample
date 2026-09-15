@@ -1,0 +1,37 @@
+#
+# 项目根 .npmrc 模板 —— 解压/克隆后复制一份为 .npmrc
+#
+#   复制命令：cp npmrc.sample .npmrc   （PowerShell: Copy-Item npmrc.sample .npmrc）
+#   npm run postinstall 也会在根目录没有 .npmrc 时自动复制，所以其实可以不管它。
+#
+# 为什么这里会有两份同一内容的配置：
+#   .npmrc                                            ← 开发态 npm install 用（点文件，进不了 zip）
+#   src/main/plugins/backup-roll/kernel-package-manager.js 的 npmrcFor()  ← 下载内核时写进暂存目录用
+# 两边必须保持一致，改一边记得改另一边。
+#
+# 三个开关缺一不可：
+#   1. node-linker=hoisted —— dsh 有约 522 个传递依赖，默认 .pnpm 虚拟存储会多垫一层
+#      路径，在 Windows MAX_PATH(260) 下极易踩雷。
+#   2. dangerously-allow-all-builds=true —— pnpm 10 起默认不跑依赖构建脚本，缺了它
+#      node-pty / koffi / dsh-subprocess-local 会「装成功、运行时才炸」。
+#   3. 二进制镜像 —— 那些构建脚本默认去 GitHub 拉预编译产物，国内拿不到，
+#      失败后回退 node-gyp，而大多数用户机器上没有 C++ 工具链。
+#
+
+registry=https://registry.npmmirror.com
+
+# pnpm 专用（npm 会忽略这两行）
+node-linker=hoisted
+dangerously-allow-all-builds=true
+
+# 原生模块预编译产物镜像
+node_pty_binary_host_mirror=https://registry.npmmirror.com/-/binary/node-pty
+sharp_binary_host_mirror=https://registry.npmmirror.com/-/binary/sharp
+sharp_libvips_binary_host_mirror=https://registry.npmmirror.com/-/binary/sharp-libvips
+
+# Electron / electron-builder 二进制镜像（npm run dist:win 时需要）
+electron_mirror=https://registry.npmmirror.com/-/binary/electron/
+electron_builder_binaries_mirror=https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+
+# 可选：改用腾讯云镜像就把上面的 registry 换成这一行
+# registry=https://mirrors.cloud.tencent.com/npm/
