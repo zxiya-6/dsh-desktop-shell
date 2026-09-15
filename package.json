@@ -22,6 +22,7 @@
     "smoke:phase2": "electron scripts/smoke-phase2.js",
     "smoke:install": "electron scripts/smoke-install.js",
     "smoke:ui": "electron scripts/smoke-ui.js",
+    "smoke:migrate": "node scripts/smoke-migrate.js",
     "dist:win": "electron-builder --win --x64",
     "dist:dir": "electron-builder --win --x64 --dir"
   },
