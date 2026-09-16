@@ -357,6 +357,9 @@ npm run dist:linux     # AppImage + deb，输出在 dist/
 
 ## 三、安装与卸载
 
+> 本节说的是 **Windows NSIS 安装包** 的行为：注册表项、ARP（添加/删除程序）、`/D=` 静默参数都只属于安装版。
+> 绿色版（`portable`）不写注册表，删掉文件夹即卸载；Linux 走 deb / AppImage，由发行版包管理器或手工放置。
+
 ### 安装：路径由你决定
 
 双击 `DSH-Desktop-Setup-<版本>.exe`，向导会给出**安装位置**页面，可以「浏览」到任意目录，
