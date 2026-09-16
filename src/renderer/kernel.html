@@ -403,7 +403,7 @@
           <input data-page-node-id="8JIG9Y7IhdA5DFW6vr3X4P" id="keepInput" max="20" min="1" step="1" type="number" value="3" style="width:78px">
           <button data-page-node-id="wXH7IHw2PyDEXkh5WbNCNT" class="danger" id="btnPrune"><!--pnid:4gXEhOozkhL8o1DreAlnrV-->清理旧快照</button>
           <div data-page-node-id="5m5qHzVPPM1lV7KfZzXqn9" class="spacer"></div>
-          <button data-page-node-id="wx0xH8zS345hpEMjNuCM9X" id="btnRestart"><!--pnid:Ui3vgwkJfom7h1XlH3wjEC-->重启 dsh 运行时</button>
+          <button data-page-node-id="wx0xH8zS345hpEMjNuCM9X" id="btnRestart" title="一键停止当前内核、重启并重新连接到新地址（端口可能变化）"><!--pnid:Ui3vgwkJfom7h1XlH3wjEC-->重启并重连内核</button>
         </div>
 
         <div data-page-node-id="wnqnx0zNrUIBqT2aAToyoE" class="hint" id="opHint"></div>
@@ -2088,7 +2088,7 @@
         })
 
         $('btnRestart').addEventListener('click', function () {
-          runTask('重启 dsh 运行时', function () {
+          runTask('重启并重连内核', function () {
             return api.restart()
           })
         })

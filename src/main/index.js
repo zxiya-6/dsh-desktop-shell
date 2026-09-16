@@ -1205,6 +1205,9 @@ if (gotLock) {
       if (mainWindow && !mainWindow.isDestroyed()) loadLocalPage(mainWindow, 'loading.html')
     })
 
+    // 内核切换进度广播给内核管理面板，让「切换中」有可见反馈，而不是像卡死。
+    launcher.on('switch-progress', (payload) => sendKernelProgress(payload))
+
     // Deliberately quiet: no dialog when nothing is available. Checking costs
     // one request to the configured feed and nothing happens until the user
     // agrees to install.

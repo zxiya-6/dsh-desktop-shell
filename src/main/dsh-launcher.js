@@ -12,7 +12,7 @@
  * silently with code 0 and no output at all — hence the explicit timeout and
  * the version check below, instead of letting the UI spin forever.
  */
-const { spawn, execSync } = require('node:child_process')
+const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
@@ -66,6 +66,63 @@ function probe(url) {
   })
 }
 
+/**
+ * 异步、带超时的进程树终止（Windows）。
+ *
+ * 旧实现用 `execSync('taskkill …')` 同步阻塞事件循环：一旦某个子进程不肯退出，
+ * 主线程（含 IPC、定时器、渲染进程通信）会被永久卡死——这正是「切换内核时
+ * 界面卡死然后崩溃」的直接原因。这里改成 spawn 异步执行并设硬超时，绝不阻塞
+ * 事件循环；即便 taskkill 一直没回，也只是让返回的 Promise 在超时后落定，
+ * 不会拖住任何其它工作。
+ */
+function killTreeAsync(child, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    if (!child || child.exitCode !== null) return resolve(true)
+    const pid = child.pid
+    if (!pid) return resolve(false)
+    let done = false
+    const finish = (ok) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      resolve(ok)
+    }
+    let timer
+    if (isWindows) {
+      const p = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      p.on('exit', () => finish(true))
+      p.on('error', () => finish(false))
+      timer = setTimeout(() => {
+        try {
+          p.kill('SIGKILL')
+        } catch {
+          /* ignore */
+        }
+        finish(false)
+      }, timeoutMs)
+    } else {
+      // POSIX（Linux / macOS）：dsh 会派生插件子进程，必须杀整棵树。
+      // 启动子进程时设了 detached:true，使其成为独立进程组（pgid === pid），
+      // 所以向 -pid 发信号即可连插件孙进程一起带走；直接 child.kill 只会杀
+      // 第一个进程，其余进程会变成僵尸残留、继续占着端口和文件锁。
+      const pgid = pid
+      const signalGroup = (sig) => {
+        try {
+          process.kill(-pgid, sig)
+        } catch {
+          /* 进程组已不存在（或已退出） */
+        }
+      }
+      signalGroup('SIGTERM')
+      child.on('exit', () => finish(true))
+      timer = setTimeout(() => {
+        signalGroup('SIGKILL')
+        finish(false)
+      }, timeoutMs)
+    }
+  })
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function waitUntilServing(url, timeoutMs = 30000) {
@@ -81,6 +138,9 @@ async function waitUntilServing(url, timeoutMs = 30000) {
 const URL_PATTERN = /(https?:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_.-]+)/
 
 class DshLauncher extends EventEmitter {
+  // 串行化会改变内核进程生命周期的操作（切换 / 重启）。见 #exclusive。
+  #opRunning = false
+
   /**
    * @param {object} [opts]
    * @param {import('./plugins/backup-roll/kernel-registry').KernelRegistry} [opts.registry]
@@ -217,6 +277,10 @@ class DshLauncher extends EventEmitter {
       cwd: paths.workspace(),
       env: buildDshEnv(kernel.entry),
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Windows 走 taskkill /T 杀整棵树，不需要 detached；POSIX 下设 detached
+      // 让子进程成为独立进程组（pgid === pid），stop 时才能用进程组信号把
+      // dsh 及其插件孙进程一并带走。不调用 unref：仍要监听它的退出与日志。
+      detached: !isWindows,
       windowsHide: true
     })
 
@@ -305,13 +369,14 @@ class DshLauncher extends EventEmitter {
     }
     this.#closeLog()
 
-    if (isWindows && child.pid) {
-      try {
-        execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' })
-        return
-      } catch {
-        /* fall through to a normal kill */
-      }
+    // 先异步杀整棵树（带超时，绝不阻塞事件循环）。Windows 用 taskkill /T，
+    // POSIX 用进程组信号（detached 子进程）——两者都在 killTreeAsync 内部按
+    // 平台分支。旧实现用同步 execSync，一旦某个子进程不肯退出，主线程会被
+    // 永久卡死，就是「切换内核时界面卡死然后崩溃」的直接原因。杀成功就返回；
+    // 极少数情况下（信号没生效）再走一次兜底的单进程 SIGTERM→SIGKILL。
+    if (child.pid) {
+      const killed = await killTreeAsync(child)
+      if (killed) return
     }
 
     try {
@@ -320,7 +385,7 @@ class DshLauncher extends EventEmitter {
       /* already gone */
     }
 
-    // Escalate if it does not go quietly.
+    // 兜底：5s 内不退出就 SIGKILL。整段只 await 一个短窗口，不会卡住 UI。
     await new Promise((resolve) => {
       const t = setTimeout(() => {
         try {
@@ -337,10 +402,33 @@ class DshLauncher extends EventEmitter {
     })
   }
 
+  /**
+   * 串行化会改变内核进程生命周期的操作（切换 / 重启）。
+   *
+   * 之前 switchTo 没有重入保护：UI 连点「切换」、或「切换」与「重启」并发时，
+   * 两次 stop/start 互相竞争，会杀掉刚拉起的新进程、把配置写乱，表现就是
+   * 「卡死后崩掉」。改为：已有操作在进行就明确拒绝（KERNEL_BUSY），而不是
+   * 排队死等约 90s 或直接崩。拒绝是干净的 IPC 错误，UI 可以友好提示。
+   */
+  async #exclusive(label, fn) {
+    if (this.#opRunning) {
+      throw new KernelError('KERNEL_BUSY', `内核操作进行中（${label}），请稍候再试`, { busy: label })
+    }
+    this.#opRunning = true
+    try {
+      return await fn()
+    } finally {
+      this.#opRunning = false
+    }
+  }
+
   /** Restart — used after plugin installs that require a fresh tree. */
   async restart() {
-    await this.stop()
-    return this.start()
+    return this.#exclusive('restart', async () => {
+      this.emit('switch-progress', { phase: 'switch-stop', percent: 20, label: '正在重启内核…' })
+      await this.stop()
+      return this.start()
+    })
   }
 
   /** Kernel currently in use, or null before the first successful start. */
@@ -366,35 +454,49 @@ class DshLauncher extends EventEmitter {
   async switchTo(version) {
     if (!this.registry) throw new Error('未提供内核注册表（KernelRegistry）。')
 
-    const info = this.registry.inspect(version)
-    if (info.status !== 'ready') {
-      throw new KernelError('KERNEL_INVALID', `内核 ${version} 不可选用：${info.reason}`, { info })
-    }
-
-    const previous = this.registry.currentVersion
-    await this.stop()
-
-    try {
-      const url = await this.start(info)
-      this.registry.setCurrent(version)
-      return { kernel: info, url }
-    } catch (err) {
-      if (previous && previous !== version) {
-        // Put the pointer back first — that is what makes the *next* launch
-        // work. Restarting the old kernel is best-effort on top of it.
-        try {
-          this.registry.setCurrent(previous)
-        } catch {
-          /* the previous snapshot may itself be gone; the pointer is best-effort */
-        }
-        try {
-          await this.start(this.registry.inspect(previous))
-        } catch {
-          /* leave it stopped; the UI is already showing the switch failure */
-        }
+    return this.#exclusive('switch', async () => {
+      const info = this.registry.inspect(version)
+      if (info.status !== 'ready') {
+        throw new KernelError('KERNEL_INVALID', `内核 ${version} 不可选用：${info.reason}`, { info })
       }
-      throw err
-    }
+
+      const previous = this.registry.currentVersion
+      this.emit('switch-progress', { phase: 'switch-stop', percent: 15, label: '正在停止当前内核…' })
+      await this.stop()
+
+      try {
+        this.emit('switch-progress', { phase: 'switch-boot', percent: 45, label: `正在启动内核 ${version}…` })
+        const url = await this.start(info)
+        this.registry.setCurrent(version)
+        this.emit('switch-progress', { phase: 'switch-done', percent: 100, label: `已切换到 ${version}` })
+        return { kernel: info, url }
+      } catch (err) {
+        this.emit('switch-progress', {
+          phase: 'switch-rollback',
+          percent: 70,
+          label: '切换失败，正在回退到原内核…'
+        })
+        if (previous && previous !== version) {
+          // 先把指针指回去——这是下次还能正常启动的关键；重启旧内核只是锦上添花。
+          try {
+            this.registry.setCurrent(previous)
+          } catch {
+            /* 旧快照可能已被删；指针回退是尽力而为 */
+          }
+          try {
+            await this.start(this.registry.inspect(previous))
+          } catch {
+            /* 保持停止；UI 已经显示切换失败 */
+          }
+        }
+        this.emit('switch-progress', {
+          phase: 'switch-failed',
+          percent: 100,
+          label: `切换失败：${err.message}`
+        })
+        throw err
+      }
+    })
   }
 }
 

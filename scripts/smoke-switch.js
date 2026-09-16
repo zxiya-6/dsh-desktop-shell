@@ -120,6 +120,34 @@ async function main() {
     return '已清空'
   })
 
+  console.log('\n[6] 并发切换被重入锁拒绝')
+  await check('并发 switchTo 被拒绝（KERNEL_BUSY，不再互踩崩溃）', async () => {
+    const p1 = launcher.switchTo(target)
+    const p2 = launcher.switchTo(target)
+    const [r1, r2] = await Promise.allSettled([p1, p2])
+    const rejected = [r1, r2].filter((r) => r.status === 'rejected')
+    if (rejected.length === 0) throw new Error('并发切换居然全部成功，重入锁失效')
+    const busy = rejected.find((r) => /KERNEL_BUSY/.test(r.reason?.message || ''))
+    if (!busy) throw new Error('并发被拒但未返回 KERNEL_BUSY：' + rejected.map((r) => r.reason?.message).join('; '))
+    // 等胜出的那次结束，保持状态干净
+    await Promise.allSettled([p1, p2])
+    return '已拒绝并发切换'
+  })
+
+  console.log('\n[7] 切换过程发出进度事件')
+  await check('switchTo 发出 switch-progress 进度事件', async () => {
+    const ev = []
+    const h = (e) => ev.push(e)
+    launcher.on('switch-progress', h)
+    try {
+      await launcher.switchTo(target)
+    } finally {
+      launcher.off('switch-progress', h)
+    }
+    if (!ev.some((e) => e.phase === 'switch-done')) throw new Error('未收到 switch-done 事件')
+    return `收到 ${ev.length} 个事件`
+  })
+
   await launcher.stop()
 
   const failed = results.filter((r) => !r.ok)

@@ -26,7 +26,9 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawn, execSync } = require('node:child_process')
+  const { spawn } = require('node:child_process')
+
+const isWindows = process.platform === 'win32'
 
 const { paths } = require('../../paths')
 const { RegistryClient, PACKAGE_NAME } = require('./registry-client')
@@ -57,22 +59,58 @@ function emit(onProgress, phase, extra = {}) {
   onProgress({ phase, ...PHASES[phase], ...extra })
 }
 
-/** Windows needs the whole tree killed, or files stay locked. */
-function killTree(child) {
-  if (!child || child.exitCode !== null) return
-  if (process.platform === 'win32') {
-    try {
-      execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' })
-      return
-    } catch {
-      /* fall through */
+/**
+ * 异步、带超时的进程树终止。
+ *
+ * 旧实现用 execSync('taskkill …') 同步阻塞事件循环：在 pnpm 超时或冒烟测试
+ * 收尾时若子进程不肯退出，主线程会被卡死。这里改用 spawn 异步执行并设硬超时，
+ * 绝不阻塞事件循环。返回值被调用方忽略（fire-and-forget），kill 在后台继续。
+ */
+function killTree(child, timeoutMs = 8000) {
+  if (!child || child.exitCode !== null) return Promise.resolve(true)
+  const pid = child.pid
+  if (!pid) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (ok) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      resolve(ok)
     }
-  }
-  try {
-    child.kill('SIGKILL')
-  } catch {
-    /* already gone */
-  }
+    let timer
+    if (process.platform === 'win32') {
+      const p = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+      p.on('exit', () => finish(true))
+      p.on('error', () => finish(false))
+      timer = setTimeout(() => {
+        try {
+          p.kill('SIGKILL')
+        } catch {
+          /* ignore */
+        }
+        finish(false)
+      }, timeoutMs)
+    } else {
+      // POSIX（Linux / macOS）：被 kill 的进程（pnpm / dsh 冒烟）都会派生子进程，
+      // 必须杀整棵进程树。调用方在 spawn 时设了 detached:true，使其成为独立进程组
+      // （pgid === pid），这里向 -pid 发信号即可连孙进程一起带走。
+      const pgid = pid
+      const signalGroup = (sig) => {
+        try {
+          process.kill(-pgid, sig)
+        } catch {
+          /* 进程组已不存在 */
+        }
+      }
+      signalGroup('SIGTERM')
+      child.on('exit', () => finish(true))
+      timer = setTimeout(() => {
+        signalGroup('SIGKILL')
+        finish(false)
+      }, timeoutMs)
+    }
+  })
 }
 
 function runPnpm(args, cwd, { env, onOutput, timeoutMs = 20 * 60 * 1000 } = {}) {
@@ -81,6 +119,9 @@ function runPnpm(args, cwd, { env, onOutput, timeoutMs = 20 * 60 * 1000 } = {}) 
       cwd,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(env || {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
+      // POSIX 下 detached 让 pnpm 成为独立进程组，killTree 才能用 -pid 连其
+      // 派生的构建脚本（node-pty 等）一起杀掉；Windows 走 taskkill /T，不需要。
+      detached: !isWindows,
       windowsHide: true
     })
 
@@ -328,6 +369,7 @@ class KernelPackageManager {
           cwd: cwd || paths.workspace(),
           env,
           stdio: ['ignore', 'pipe', 'pipe'],
+          detached: !isWindows,
           windowsHide: true
         })
       } catch (err) {
