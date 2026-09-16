@@ -1,6 +1,6 @@
 # DSH Desktop
 
-把 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 封装成一个开箱即用的 Windows 桌面应用：
+把 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 封装成一个开箱即用的桌面应用（**Windows / Linux**）：
 **依赖全部内置、与系统环境隔离、自带 Chromium 内核、内置可更新依赖的终端。**
 
 沿用官方 Web UI（不重造界面），桌面层只负责它原本缺失的宿主能力：进程生命周期、端口与鉴权、数据持久化、终端、打包分发。
@@ -9,13 +9,14 @@
 
 | | |
 |---|---|
-| 是什么 | DeepSeek Harness 的 Windows 桌面壳：依赖内置、与系统环境隔离、自带终端 |
-| 产物 | `DSH-Desktop-Setup-0.1.1.exe`（NSIS 安装器）、`DSH-Desktop-0.1.1-portable.exe`（绿色版） |
-| 构建 | `npm install` → `npm run dist:win`（**必须 Node 24**，见第二节） |
-| 数据在哪 | `%APPDATA%\dsh-desktop\`，与安装目录无关，**卸载不丢** |
+| 是什么 | DeepSeek Harness 的桌面壳：依赖内置、与系统环境隔离、自带终端 |
+| 当前版本 | **0.1.2** |
+| 产物 | Windows：`DSH-Desktop-Setup-0.1.2.exe`（NSIS 安装器）、`DSH-Desktop-0.1.2-portable.exe`（绿色版）；Linux：`npm run dist:linux` 产出 AppImage + deb |
+| 构建 | `npm install` → `npm run dist:win` 或 `npm run dist:linux`（**必须 Node 24**，见第二节；**不能交叉编译**） |
+| 数据在哪 | Windows `%APPDATA%\dsh-desktop\`、Linux `~/.config/dsh-desktop\`，与安装目录无关，**卸载不丢** |
 | 源码结构 | `src/main`（主进程）、`src/preload`、`src/renderer`（加载页 / 终端 / 内核面板） |
 
-> 安装器 117 MB，超过 GitHub 单文件 100 MB 硬限制，因此**不进 git**，随 Release 附件分发。
+> 安装器约 112 MB，超过 GitHub 单文件 100 MB 硬限制，因此**不进 git**，随 Release 附件分发。
 
 ---
 
@@ -31,7 +32,7 @@
 | `smoke:kernel` | **PASS** | 真启动 + token 探测 |
 | `smoke:phase2` | **13 / 13** | 远端元数据、双通道限速、插件清单、回滚候选、并发锁 |
 | `smoke:ui` | **PASS** | 零控制台错误 |
-| `smoke:switch` | **PASS** | 成功路径 + 失败路径（配置不被污染、旧内核自愈） |
+| `smoke:switch` | **PASS** | 7 组：成功路径 + 失败路径（配置不被污染、旧内核自愈）+ 并发被重入锁拒绝（`KERNEL_BUSY`）+ 切换过程发出进度事件 |
 | `smoke:install` | **PASS** | 真实下载 500 依赖 → 原生构建 → 冒烟 → 原子提升全链路，环境已还原 |
 | `smoke:migrate` | **18 / 18**（新增） | 遗留内核收养、快照不被覆盖、数据抢救、幂等、残缺候选不抛错、应用自更新启用门槛 |
 | `smoke:paths` | **40 / 40** | 路径归一化、DSH_HOME 与内核目录的嵌套互斥、系统目录拒绝 |
@@ -43,10 +44,13 @@
 |---|---|---|
 | 1 | 老用户「内置 dsh」→ `core/snapshots` 迁移 | **已完成**（`src/main/migrate.js`，见第 2.6 节） |
 | 2 | `electron-updater` 自动更新 UI | **已完成**：主进程链路（第 5 节）+ 内核管理面板第 7 节「应用更新」（当前/最新版本、检查、下载进度条、重启并安装、更新源与「启动时自动检查」开关）。菜单「帮助 → 检查应用更新…」的原生对话框保留，作为内核起不来时的兜底。**端到端仍未真机验证**：尚未配置真实更新源（见第七节已知限制） |
-| 3 | 真机出包验证 NSIS（自选路径 / Geek 识别 / 卸载清场） | **已完成**：`npm run dist:win` 在 Windows + **portable Node 24.21** 上跑通，产出 `DSH-Desktop-Setup-0.1.0.exe`(NSIS) + `DSH-Desktop-0.1.0-portable.exe`，且 `node-pty` 在打包后的 `app.asar.unpacked` 中实测可启 PTY（见第 2.6 节补充）。系统自带的 Node 22 不够用，构建机须自备 Node 24（见第 2 节） |
+| 3 | 真机出包验证 NSIS（自选路径 / Geek 识别 / 卸载清场） | **已完成**：`npm run dist:win` 在 Windows + **portable Node 24.21** 上跑通（0.1.0 首次验证，**0.1.2 复验通过**），产出 `DSH-Desktop-Setup-0.1.2.exe`(NSIS) + `DSH-Desktop-0.1.2-portable.exe`，且 `node-pty` 在打包后的 `app.asar.unpacked` 中实测可启 PTY（见第 2.6 节补充）。系统自带的 Node 22 不够用，构建机须自备 Node 24（见第 2 节） |
 | 4 | 启动容错：三处会导致「双击后完全没有窗口」的缺陷 | **已完成**：模块级 `applyPathOverrides()` 与 `boot()` 中的 `normalizeKernelDirToCurrent()` 缺 try/catch（一抛错主进程在 `require` 阶段或 `createMainWindow()` 前就崩），窗口 `show:false` 且无 `did-fail-load` 兜底（加载失败则 `ready-to-show` 永不触发）。三处均为**纯兜底**，正常路径一行都不执行 |
 | 5 | 单实例锁跨「便携版 / 安装版」失效 | **已完成**：Electron 自带的锁按 userData 区分，便携版（exe 同级 `dsh-desktop-data`）与安装版（`%APPDATA%\dsh-desktop`）各持一把，能同时跑并争抢端口。新增 `src/main/instance-lock.js`，把锁放到与 userData 无关的固定位置 `%APPDATA%\dsh-desktop-shell\instance.lock`，两版本共享；抢不到时弹原生对话框并退出。同文件里的 `clearStaleLock()` 还负责启动前清掉内核侧僵尸锁（见下） |
 | 6 | 内核侧僵尸锁导致「双击打不开」 | **已完成**：task-board 会在 `dsh-home/task-board/ledger-v2.lock` 记下自己的 pid，进程被强杀后锁不会消失，下次启动内核直接报 `ledger is already owned by process <pid>` 并退出。`boot()` 现在会在拉起内核前调 `clearStaleLock()`：pid 已死就删，还活着绝不动 |
+| 7 | 内核切换「非常容易卡死然后崩掉」 | **已完成**：三个根因叠在一起——① 杀进程树用 `execSync('taskkill')`，**同步阻塞主进程事件循环**，切换期间 UI/IPC/心跳全停；② `switchTo()` 无重入保护，并发时两次 `stop`/`start` 互踩，写乱 `config.json`；③ 全程无进度反馈，用户只能反复点。已改为异步 `killTreeAsync()` + `#exclusive` 重入锁（忙则抛 `KERNEL_BUSY`）+ `switch-progress` 广播。详见第 2.9 节 |
+| 8 | 一键重启并重连内核 | **已完成**：`Ctrl + K` 面板「操作」区按钮 **「重启并重连内核」**（`btnRestart`）。链路 `ipcMain.handle('dsh:restart')` → `launcher.restart()` → `mainWindow.loadURL(url)`。端口每次随机，**不重连就会停在旧地址上**，所以这一步不能省 |
+| 9 | Linux 跨平台兼容 | **已完成（产物未真机验证）**：POSIX 下 spawn 一律 `detached: true`，杀树走进程组 `process.kill(-pgid, 'SIGTERM')` → 超时 `SIGKILL`（直接 `child.kill()` 只杀直接子进程，dsh 的插件孙进程会变孤儿占着端口）；`package.json` 新增 `linux` 目标（AppImage + deb）与 `npm run dist:linux`。Linux 包**只能在 Linux 主机上构建**，见第二节 |
 
 ### 接手必读：六条不变量
 
@@ -58,7 +62,7 @@
 | 2 | **只有新内核冒烟通过才替换当前内核**；失败则当前内核不变 + 清 `core/staging` | `kernel-package-manager.install()` 的「校验→暂存→冒烟→原子提升」链路 |
 | 3 | **绝不修改 deepseekharness 内核本身**，只做接口对接 | 内核目录只允许写 `snapshot.json` 元数据 |
 | 4 | `DSH_HOME` 默认 = `userData/dsh-home`，**可配置**（见第 2.7 节），但**绝不能与内核目录互相嵌套** | 放进内核树会被「清理旧快照」连带删除；反过来则会被 dsh 当成自己的数据目录读写 |
-| 5 | Windows 限制：MAX_PATH 260、无 symlink、进程树用 `taskkill` 清 | 快照提升用 `rename` 不用 symlink；hoisted 扁平 node_modules 缩短路径 |
+| 5 | 平台差异收敛在各文件顶部的 `isWindows`：Windows 是 MAX_PATH 260、无 symlink、进程树用 `taskkill /T` 清；POSIX 是 `detached` 进程组 + `process.kill(-pgid)` 清。**杀进程树必须异步** | 快照提升用 `rename` 不用 symlink；hoisted 扁平 node_modules 缩短路径；`execSync` 一律禁止（见第 2.9 节） |
 | 6 | `config.json` / `plugin-manifest.json` 必须**原子写**（临时文件 + rename） | 更新中断不能让应用起不来 |
 
 ---
@@ -84,7 +88,7 @@
 ### 2. 数据放在安装目录之外
 
 ```
-%APPDATA%\dsh-desktop\
+%APPDATA%\dsh-desktop\          ← Linux 上是 ~/.config/dsh-desktop/
 ├── dsh-home\        DSH_HOME：profile、凭据、插件（升级不丢）
 ├── workspace\       默认工作区，首次启动自动创建
 ├── logs\dsh.log     dsh 子进程日志
@@ -183,6 +187,27 @@ dsh 本体**不再打进安装包**，而是当作一个可更新的「内核」
 - **商店就是 npm registry**：dsh 插件本来就是 npm 包，安装走的也是 `pnpm add <包名>`，所以「搜得到的」和「装得上的」同源，不会出现列表里能点、一点安装却 404。
 - 元信息写在 `plugin-manifest.json`，含：`name`、`version`、`requiresKernel`（插件**声明依赖**的内核版本，依次取 `dsh.kernelVersion` → `peerDependencies["@deepseek-ai/dsh"]` → `engines.dsh`，都没写则为 null）、`kernelVersion`（**实际装在哪个内核上**，排障时的现场快照）。
 
+### 2.9 内核切换的稳定性（异步杀树 + 操作串行化）
+
+早期「切换内核 = 卡死然后崩掉」不是一个 bug，而是三个叠在一起，都已修掉：
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 点一下整个界面冻住，几秒后进程消失 | 杀进程树用 `execSync('taskkill …')`，**同步阻塞主进程事件循环**，切换期间 UI、IPC、心跳全停摆 | `killTreeAsync()`：`spawn('taskkill', …)` + 超时等待；POSIX 分支用 `process.kill(-pgid, 'SIGTERM')`，超时再 `SIGKILL` |
+| 连点两次「切换」、或「切换」撞上「重启」，状态彻底乱套 | `switchTo()` 没有重入保护，两次 `stop()`/`start()` 互相竞争，会杀掉刚拉起的新进程、把 `config.json` 写乱 | `#exclusive` 重入锁（`#opRunning`）：已有操作在进行就**明确拒绝**并抛 `KERNEL_BUSY`，不排队死等、更不互踩 |
+| 卡住时不知道在干什么，只能反复点 | 切换全程没有任何反馈 | 全程广播 `switch-progress`：`switch-stop` → `switch-boot` → `switch-done` / `switch-rollback` / `switch-failed`，由 `index.js` 转发给所有窗口 |
+
+两条硬约束，动这两个文件前先读：
+
+- **`stop()` / `killTree()` 里禁用 `execSync`。** 内核进程的生死是异步问题，同步等待会把整个桌面壳拖死。
+- **POSIX 下 spawn 必须 `detached: true`。** 不设的话子进程与 Electron 同组，杀组会误伤自己；设了才能用 `process.kill(-pgid)` 连 dsh 的插件孙进程一起收干净。
+
+面板「操作」区的 **「重启并重连内核」** 走的是同一条链路：`launcher.restart()` 拿到新 URL 后，
+由 `index.js` 执行 `mainWindow.loadURL(url)`——端口每次随机，**不重连就会停在旧地址**。
+
+> 切换/重启期间再发起同类操作会被 `KERNEL_BUSY` 拒绝，UI 提示「请稍候再试」。这是刻意设计，不是 bug：
+> 一次切换可能要 90 秒，排队等待和卡死没有区别。
+
 ### 3. 内置终端
 
 `Ctrl + \`` 打开。启动时自动注入内置环境变量，可直接执行：
@@ -193,13 +218,25 @@ dsh plugin --profile web add @scope/plugin
 pnpm add <pkg>
 ```
 
-终端会**显式检测并展示 shell 类型与版本**，因为 Windows 上三者的行为差异足以导致乱码和命令失败：
+终端会**显式检测并展示 shell 类型与版本**——不同 shell 的行为差异足以导致乱码和命令失败，
+所以不猜、直接探测并把结果打在界面上。候选顺序按平台分开：
+
+**Windows**（`SHELL_CANDIDATES` 的 `isWindows` 分支）
 
 | Shell | 说明 |
 |---|---|
 | `pwsh.exe` (PowerShell 7+) | 首选，UTF-8 表现最好 |
 | `powershell.exe` (5.1) | 内置版本，兼容回退 |
+| `bash.exe` (Git Bash / WSL) | 装了就用；显式列出是为了让「只有 Git Bash」的开发机不至于掉到 cmd |
 | `cmd.exe` | 最后回退，启动时自动 `chcp 65001` |
+
+**Linux / macOS**（POSIX 分支）
+
+| Shell | 说明 |
+|---|---|
+| `/bin/bash --login` | 首选 |
+| `/bin/zsh --login` | 次选 |
+| `/bin/sh` | 最后回退 |
 
 ### 4. 安全
 
@@ -242,19 +279,20 @@ src/main/app-updater.js  —— 泛型 provider + 运行时 feedURL
 | `src/main/config-store.js` | `config.json` + 更新锁 + `KERNEL_MIN_NODE_MAJOR=24` + `app` 段（迁移记录 / 更新源）+ `paths` 段（自定义 DSH_HOME / 内核目录） |
 | `src/main/path-config.js` | **新增** 用户可配置路径的校验：绝对路径、系统目录、两者互相嵌套、可写性、内核快照合法性（`smoke:paths`，40 项） |
 | `src/main/plugins/backup-roll/plugin-store.js` | **新增** 插件商店：npm registry 搜索 + 解析插件声明依赖的内核版本 |
-| `src/main/plugins/backup-roll/*` | `kernel-registry`(快照注册) / `kernel-package-manager`(下载编排) / `plugin-manage`(插件+回滚) / `registry-client` / `throttle-proxy`(限速) / `validate`(防注入) |
-| `src/renderer/{loading,kernel,terminal}.html` | 加载页 / 内核管理面板（第 7 节为桌面壳「应用更新」）/ 终端 |
+| `src/main/plugins/backup-roll/*` | `kernel-registry`(快照注册) / `kernel-package-manager`(下载编排，**POSIX 进程组杀树**) / `plugin-manage`(插件+回滚) / `registry-client` / `throttle-proxy`(限速) / `validate`(防注入) |
+| `src/main/instance-lock.js` | **新增** 跨「便携版 / 安装版」单实例锁（硬链接独占创建、只释放自己的锁）+ 僵尸锁清理（`clearStaleLock`） |
+| `src/renderer/{loading,kernel,terminal}.html` | 加载页 / 内核管理面板（「操作」区含 **「重启并重连内核」**，第 7 节「应用更新」、第 8 节「路径设置」）/ 终端 |
 | `npmrc.sample` | **新增** `.npmrc` 的非点文件副本（`postinstall` 缺失时自动还原，防传输丢文件） |
 | `scripts/smoke-*.js` | 冒烟脚本；`smoke:migrate` 走纯 node，不需要 Electron |
 | `build/installer.nsh` | NSIS 钩子：自选路径记忆、写 InstallLocation、卸载前 taskkill、数据保留询问 |
 
 ---
 
-## 二、在 Windows 上构建
+## 二、构建（Windows / Linux）
 
-> ⚠️ **必须在 Windows 上构建，不能交叉编译。**
+> ⚠️ **不能交叉编译——Windows 包只能在 Windows 上出，Linux 包只能在 Linux 上出。**
 > `node-pty` 是原生模块，`node-gyp` 不支持交叉编译。在 Linux/macOS 上打 Windows 包会直接报
-> `node-gyp does not support cross-compiling native modules from source`。
+> `node-gyp does not support cross-compiling native modules from source`；反过来也一样。
 > 参考方案 dsh-desktop 也遵循同样的原则。
 
 ### 前置
@@ -267,7 +305,7 @@ src/main/app-updater.js  —— 泛型 provider + 运行时 feedURL
 > Node 22 上它会**静默退出、退出码 0、无任何报错**（第 5 节第 5 条）。
 > `KERNEL_MIN_NODE_MAJOR = 24` 硬编码在 `config-store.js`，不要往下调。
 
-### 步骤
+### Windows
 
 ```powershell
 cd dsh-desktop
@@ -299,8 +337,21 @@ npm run dist:win
 
 产物在 `dist\`：
 
-- `DSH-Desktop-Setup-0.1.0.exe` —— NSIS 安装包（标准安装，系统可识别、可卸载）
-- `DSH-Desktop-0.1.0-portable.exe` —— 免安装绿色版（不写注册表，删文件夹即卸载）
+- `DSH-Desktop-Setup-0.1.2.exe` —— NSIS 安装包（标准安装，系统可识别、可卸载）
+- `DSH-Desktop-0.1.2-portable.exe` —— 免安装绿色版（不写注册表，删文件夹即卸载）
+
+### Linux
+
+```bash
+cd dsh-desktop
+npm install
+npm run dist:linux     # AppImage + deb，输出在 dist/
+```
+
+> Linux 包必须在 Linux 主机上构建（同上，`node-pty` 不能交叉编译）。
+> **Linux 产物目前尚未在真机上运行验证**：`package.json` 已配好 `linux` 目标（AppImage + deb），
+> 代码里的平台分支（POSIX 进程组杀树、`detached: true` 的 spawn、`app.getPath('appData')` 取值）
+> 也都按 POSIX 语义改过，但还没有真出过包、真跑过一次。见第七节已知限制。
 
 ---
 
@@ -314,7 +365,7 @@ npm run dist:win
 | 方式 | 用法 | 场景 |
 |---|---|---|
 | 向导选择 | 「安装位置」页 → 浏览 / 手工输入 | 手动安装 |
-| 静默参数 | `DSH-Desktop-Setup-0.1.0.exe /S /D=D:\Tools\DSH Desktop` | 批量部署、脚本安装 |
+| 静默参数 | `DSH-Desktop-Setup-0.1.2.exe /S /D=D:\Tools\DSH Desktop` | 批量部署、脚本安装 |
 | 沿用上次 | 无需操作 | 升级、或卸载后重装 |
 
 `/D=` 必须放在命令行**最后一位**，且路径**不要加引号**（含空格也能正确解析）。
@@ -416,8 +467,10 @@ npm start          # 或 npm run dev
 | `npm run smoke:migrate` | **新增** 旧版迁移：收养 / 不覆盖 / 数据抢救 / 幂等（纯 node，无需 Electron） |
 | `npm run seed:core -- 0.1.5-rc.1` | 用内置 pnpm 装一份内核快照（验证依赖树可跑） |
 | `npm run smoke:kernel` | 从 userData 解析内核并真实启动，拿到带 token 的 URL |
-| `npm run smoke:switch` | 内核切换：成功路径 + 失败路径（配置不被污染、旧内核自愈） |
+| `npm run smoke:switch` | 内核切换：成功路径 + 失败路径（配置不被污染、旧内核自愈）+ **并发被 `KERNEL_BUSY` 拒绝** + **进度事件** |
 | `npm run smoke:phase2` | 远端元数据、双通道限速、插件清单、回滚候选、并发锁 |
+| `npm run smoke:paths` | 用户可配置路径的校验（纯 node，40 项） |
+| `npm run smoke:lock` | 单实例锁与僵尸锁清理（纯 node，34 项） |
 
 只想验证内置终端是否可用（不启动完整界面）：
 
@@ -512,6 +565,26 @@ dsh 有约 522 个传递依赖。默认的 `.pnpm` 虚拟存储会给每个包�
 > **`npmrc.sample`**。`npm install` 时 `scripts/postinstall.js` 发现根目录没有 `.npmrc` 就会自动复制——
 > 拿到源码后什么都不用做，直接 `npm install` 即可。
 
+**11. 内核进程的启停不能同步等**
+
+`execSync('taskkill /pid <pid> /T /F')` 写起来最简单，但它会**同步阻塞 Electron 主进程的事件循环**：
+切换期间窗口不重绘、IPC 不响应、`waitUntilServing()` 的轮询全部停摆。
+用户看到的就是「点一下卡死，几秒后崩掉」——而日志里什么都没有，极难定位。
+一律改用 `spawn('taskkill', …)` + 超时等待（见 `dsh-launcher.js` 的 `killTreeAsync`）。
+
+**12. 内核生命周期操作必须串行化**
+
+「切换」和「重启」都包含 `stop → start`。并发时后一个 `stop()` 会杀掉前一个刚拉起的进程，
+`config.json` 也会被写成谁都不想要的值。用 `#exclusive` 重入锁：忙就**明确抛 `KERNEL_BUSY`**，
+不要排队死等——一次切换可能要 90 秒，排队等待和卡死没有区别，而拒绝是干净的 IPC 错误，UI 能友好提示。
+
+**13. POSIX 下杀进程树要杀「进程组」，不是杀子进程**
+
+`child.kill()` 只杀直接子进程。dsh 会再拉起插件子进程，留在后面变孤儿、继续占着端口和文件句柄
+（表现为「明明退出了，重启却说端口被占用 / 文件被锁」）。
+spawn 时设 `detached: true` 让子进程自成进程组（此时 `pgid === pid`），
+然后 `process.kill(-pgid, 'SIGTERM')`，超时再 `SIGKILL`。Windows 不需要 `detached`，走 `taskkill /T` 即可。
+
 ---
 
 ## 六、与社区方案 dsh-desktop 的关系
@@ -535,7 +608,11 @@ dsh 有约 522 个传递依赖。默认的 `.pnpm` 虚拟存储会给每个包�
 
 ## 七、已知限制
 
-- **仅 Windows x64**。官方 Harness 桌面端同样未将 Linux 列入发布目标。
+- **Windows x64 与 Linux x64 都已支持，但只有 Windows 真机验证过。**
+  Windows：0.1.2 的 NSIS 安装包与绿色版均已实机跑通（含 `node-pty` 终端、`asar` 内代码校验）。
+  Linux：已配 `AppImage` + `deb` 目标、平台分支已按 POSIX 语义改好，但**尚未在 Linux 主机上出包并运行验证**，
+  且 Linux 包只能在 Linux 主机上构建（见第二节）。官方 Harness 桌面端同样未将 Linux 列入发布目标。
+- 内核切换 / 重启期间再发起同类操作会被 `KERNEL_BUSY` 拒绝（UI 提示「请稍候再试」）。这是刻意的设计，不是缺陷——见第 2.9 节。
 - dsh 仍是 `0.1.x-rc` 开发者预览版，一个月发 20 个版本，**必须锁版本**（当前 `0.1.5-rc.1`）。
   内核管理面板可以列出和切换已安装版本，但**不会自动跳到未经验证的 rc**。
 - 内核不再进安装包，安装包体积显著下降；代价是**首次启动（或换机后）需要联网下载内核**。
