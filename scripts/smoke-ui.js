@@ -62,6 +62,23 @@ async function run() {
       return { latest: null, current: registry.currentVersion, outdated: false, error: err.message }
     }
   })
+  // 面板第 2 节的远端版本下拉框走这个通道；与 index.js 一样失败不抛错，
+  // 否则内核页会多出一个「无 handler」的控制台报错。
+  ipcMain.handle('kernel:remoteVersions', async () => {
+    try {
+      return await kernelManager.listRemoteVersions()
+    } catch (err) {
+      return {
+        registry: config.read().kernel.registry,
+        latest: null,
+        distTags: {},
+        current: registry.currentVersion,
+        total: 0,
+        items: [],
+        error: err.message
+      }
+    }
+  })
   ipcMain.handle('kernel:switchVersion', async () => kernelStatus())
   ipcMain.handle('kernel:rollback', async () => kernelStatus())
   ipcMain.handle('kernel:update', async () => kernelStatus())

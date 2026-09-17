@@ -64,6 +64,41 @@ function writeShim(targetPath, name) {
   return file
 }
 
+/** 命令 shim 所在目录（同时是「伪装成系统命令」的 PATH 前缀来源）。 */
+function shimDir() {
+  return path.join(paths.userData(), 'bin')
+}
+
+/**
+ * `node` shim —— 把 Electron 伪装成系统 node。
+ *
+ * 为什么必须有它：pnpm 装内核时，node-pty / koffi / protobufjs 这些带构建
+ * 脚本的包会在子 shell 里直接唤 `node`。打包环境里系统 PATH 通常**没有**
+ * node（这正是「与系统环境隔离」的代价），于是安装跑到 500/502 个包时全线
+ * 报 `sh: 1: node: not found` 并整体失败——开发机上因为有 node 才看不出来。
+ * 这里用 `ELECTRON_RUN_AS_NODE=1` 的 Electron 顶上，安装链路才真正自洽。
+ */
+function writeNodeShim() {
+  const dir = shimDir()
+  fs.mkdirSync(dir, { recursive: true })
+  const nodeExe = process.execPath
+
+  if (isWindows) {
+    const file = path.join(dir, 'node.cmd')
+    fs.writeFileSync(
+      file,
+      `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${nodeExe}" %*\r\n`,
+      'utf8'
+    )
+    return file
+  }
+
+  const file = path.join(dir, 'node')
+  fs.writeFileSync(file, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${nodeExe}" "$@"\n`, 'utf8')
+  fs.chmodSync(file, 0o755)
+  return file
+}
+
 /**
  * Emit `dsh` and `pnpm` shims and return the directory containing them.
  *
@@ -74,11 +109,29 @@ function writeShim(targetPath, name) {
  * dsh shim is simply skipped while pnpm stays available.
  */
 function ensureShims(dshEntry) {
-  const dir = path.join(paths.userData(), 'bin')
+  const dir = shimDir()
   fs.mkdirSync(dir, { recursive: true })
+  // node shim 无条件写：终端里敲 `node`、以及 pnpm 装包时的构建脚本都要用到。
+  writeNodeShim()
   if (dshEntry && fs.existsSync(dshEntry)) writeShim(dshEntry, 'dsh')
   writeShim(paths.pnpmBin(), 'pnpm')
   return dir
+}
+
+/**
+ * 给 pnpm 子进程准备的环境：在 PATH 最前面放上我们的 shim 目录与 Electron
+ * 所在目录。
+ *
+ * 内核/插件的安装脚本会自己唤 `node`，而打包环境里系统 PATH 没有 node；
+ * 不补这一段，安装会一直卡在最后一个包上失败（详见 writeNodeShim）。
+ */
+function pnpmPathEntries() {
+  return [shimDir(), path.dirname(process.execPath)]
+}
+
+function withPnpmPath(env = {}) {
+  const rest = env[PATH_KEY] ?? process.env[PATH_KEY] ?? ''
+  return { ...env, [PATH_KEY]: joinPath([...pnpmPathEntries(), rest]) }
 }
 
 function joinPath(entries) {
@@ -136,6 +189,10 @@ module.exports = {
   buildDshEnv,
   buildTerminalEnv,
   ensureShims,
+  writeNodeShim,
+  shimDir,
+  pnpmPathEntries,
+  withPnpmPath,
   defaultShell,
   systemPathEntries,
   PATH_KEY

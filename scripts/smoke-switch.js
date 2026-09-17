@@ -127,8 +127,17 @@ async function main() {
     const [r1, r2] = await Promise.allSettled([p1, p2])
     const rejected = [r1, r2].filter((r) => r.status === 'rejected')
     if (rejected.length === 0) throw new Error('并发切换居然全部成功，重入锁失效')
-    const busy = rejected.find((r) => /KERNEL_BUSY/.test(r.reason?.message || ''))
-    if (!busy) throw new Error('并发被拒但未返回 KERNEL_BUSY：' + rejected.map((r) => r.reason?.message).join('; '))
+    // KERNEL_BUSY 在 err.code 上，不在 message 里（message 是给用户看的中文）。
+    // 这里同进程跑，code 拿得到；跨 IPC 时自定义属性会丢，所以也兼容查 message。
+    const busy = rejected.find(
+      (r) => r.reason?.code === 'KERNEL_BUSY' || /KERNEL_BUSY/.test(r.reason?.message || '')
+    )
+    if (!busy) {
+      throw new Error(
+        '并发被拒但未返回 KERNEL_BUSY：' +
+          rejected.map((r) => `${r.reason?.code || '-'}: ${r.reason?.message}`).join('; ')
+      )
+    }
     // 等胜出的那次结束，保持状态干净
     await Promise.allSettled([p1, p2])
     return '已拒绝并发切换'

@@ -71,6 +71,14 @@ fs.mkdirSync(plainDir, { recursive: true })
 
 const ctx = { kernelDir, snapshotsDir, stagingDir, dshHome: homeDir }
 
+/**
+ * 「系统目录」在两个平台上不是同一个东西：Windows 取 SystemRoot，
+ * POSIX 取 /etc。原先这里硬编码了 Windows 的写法，在 Linux 上会被
+ * path.resolve 解析成当前工作目录下的一个普通子目录，于是「系统目录
+ * 应被拒绝」这条用例其实什么都没验到。
+ */
+const systemDir = process.platform === 'win32' ? process.env.SystemRoot || 'C:\\Windows' : '/etc'
+
 /* ------------------------------------------------------------------ *
  * 1. 归一化
  * ------------------------------------------------------------------ */
@@ -97,10 +105,10 @@ console.log('\n[3] DSH_HOME')
 expectReject('空值被拒', validateDshHome('', ctx), 'EMPTY')
 expectReject('null 被拒', validateDshHome(null, ctx), 'EMPTY')
 expectReject('磁盘根目录被拒', validateDshHome(path.parse(root).root, ctx), 'ROOT')
-expectReject('系统目录被拒', validateDshHome(process.env.SystemRoot || 'C:\\Windows', ctx), 'PROTECTED')
+expectReject('系统目录被拒', validateDshHome(systemDir, ctx), 'PROTECTED')
 expectReject(
   '系统目录的子目录被拒',
-  validateDshHome(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32'), ctx),
+  validateDshHome(path.join(systemDir, process.platform === 'win32' ? 'System32' : 'default'), ctx),
   'PROTECTED'
 )
 expectReject('与内核目录相同被拒', validateDshHome(kernelDir, ctx), 'SAME_AS_KERNEL')
@@ -136,7 +144,7 @@ expectReject(
 console.log('\n[4] 内核目录')
 expectReject('空值被拒', validateKernelDir('', ctx), 'EMPTY')
 expectReject('磁盘根被拒', validateKernelDir(path.parse(root).root, ctx), 'ROOT')
-expectReject('系统目录被拒', validateKernelDir(process.env.SystemRoot || 'C:\\Windows', ctx), 'PROTECTED')
+expectReject('系统目录被拒', validateKernelDir(systemDir, ctx), 'PROTECTED')
 expectReject('与 DSH_HOME 相同被拒', validateKernelDir(homeDir, ctx), 'SAME_AS_HOME')
 expectReject('落在 DSH_HOME 内被拒', validateKernelDir(path.join(homeDir, 'kernel'), ctx), 'INSIDE_HOME')
 expectReject(

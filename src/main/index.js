@@ -17,13 +17,17 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron')
 
-const { paths, ensureDirectories, setOverrides } = require('./paths')
+// getOverrides 是 paths 模块的导出函数，不在 paths 对象上——早先误写成
+// paths.getOverrides()，三个调用点全在运行时抛 TypeError，表现为启动时的
+// 「校正内核目录失败」和设置页读不出路径。这里显式导出，避免再错。
+const { paths, ensureDirectories, setOverrides, getOverrides } = require('./paths')
 const { validate: validatePathConfig } = require('./path-config')
 const { DshLauncher } = require('./dsh-launcher')
 const { TerminalManager, detectShell } = require('./terminal')
 const { ConfigStore } = require('./config-store')
 const { KernelRegistry, KernelError } = require('./plugins/backup-roll/kernel-registry')
 const { KernelPackageManager } = require('./plugins/backup-roll/kernel-package-manager')
+const { KernelAutoUpdater } = require('./plugins/backup-roll/kernel-auto-update')
 const { PluginManager } = require('./plugins/backup-roll/plugin-manage')
 const { ThrottleProxy } = require('./plugins/backup-roll/throttle-proxy')
 const { assertSnapshotVersion, assertVersion } = require('./plugins/backup-roll/validate')
@@ -131,7 +135,7 @@ try {
 function normalizeKernelDirToCurrent() {
   const current = config.read().kernel.currentVersion
   const next = current ? paths.snapshotDir(current) : null
-  const applied = paths.getOverrides()
+  const applied = getOverrides()
   if (applied.kernelDir !== next) {
     config.write({ paths: { kernelDir: next } })
     setOverrides({ dshHome: applied.dshHome, kernelDir: next })
@@ -426,7 +430,18 @@ function createKernelWindow() {
  * Boot
  * ------------------------------------------------------------------ */
 
+/**
+ * 最后一次状态。
+ *
+ * 只推送是不够的：boot 在窗口 `did-finish-load` 之前就可能跑完，加载页注册
+ * `onStatus` 时那条 `kernel-missing` / `ready` 早已发过了，页面会永远停在
+ * 「正在初始化…」—— 内核缺失时的「安装内核」入口也就跟着不出现。所以状态
+ * 除了推送，还要能被 `dsh:getStatus()` 拉一次（见 loading.html）。
+ */
+let lastStatus = { state: 'starting', detail: '' }
+
 function sendStatus(state, detail) {
+  lastStatus = { state, detail: detail || '' }
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     try {
@@ -800,8 +815,38 @@ function buildMenu() {
  * IPC
  * ------------------------------------------------------------------ */
 
+/** 内核自动更新器。在 registerIpc() 里实例化——它依赖那个安装函数。 */
+let autoUpdater = null
+
+/** 自动更新状态广播给所有窗口（日志由 KernelAutoUpdater 自己打）。 */
+function sendAutoUpdateState(state, log) {
+  if (log) console.log(`[kernel:auto] ${log}`)
+  const payload = state || (autoUpdater ? autoUpdater.snapshot() : null)
+  if (!payload) return
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    try {
+      win.webContents.send('kernel:autoUpdate', payload)
+    } catch {
+      /* window went away mid-send */
+    }
+  }
+}
+
 function registerIpc() {
+  autoUpdater = new KernelAutoUpdater({
+    config,
+    registry,
+    manager: kernelManager,
+    // 自动更新与手动「下载并安装」共用同一条安装链路（先启动、再写配置）。
+    installAndActivate: (version) => installKernelVersion(version, { activate: true, trigger: 'auto' }),
+    onEvent: sendAutoUpdateState
+  })
+
   ipcMain.handle('dsh:getStatus', () => ({
+    // state / detail：给「晚一步加载完」的页面补齐推送前已经发生过的状态。
+    state: lastStatus.state,
+    detail: lastStatus.detail,
     url: launcher.url,
     pid: launcher.child?.pid ?? null,
     dshHome: paths.dshHome(),
@@ -847,7 +892,7 @@ function registerIpc() {
 
   /** 设置页一次拿全：当前值、默认值、是否为自定义。 */
   function pathConfigSnapshot() {
-    const applied = paths.getOverrides()
+    const applied = getOverrides()
     const current = config.read().kernel.currentVersion
     return {
       dshHome: paths.dshHome(),
@@ -909,7 +954,7 @@ function registerIpc() {
     if (kind !== 'dshHome' && kind !== 'kernelDir') {
       throw new Error(`未知的路径类型：${kind}`)
     }
-    const applied = paths.getOverrides()
+    const applied = getOverrides()
 
     // 留空 = 恢复默认位置
     if (value === null || String(value).trim() === '') {
@@ -971,7 +1016,39 @@ function registerIpc() {
    * HTTP, so a failed update is invisible to the user apart from an error.
    */
   ipcMain.handle('kernel:update', async (_event, { version = 'latest', activate = true } = {}) => {
-    // 'latest' is a valid dist-tag; a concrete version must be a real semver.
+    const result = await installKernelVersion(version, { activate, trigger: 'manual' })
+    // 手动触发走 IPC 时要把异常抛回渲染层（界面负责提示）；自动更新自己在
+    // KernelAutoUpdater 里吞掉并记录。
+    return result
+  })
+
+  ipcMain.handle('kernel:checkNow', async () => autoUpdater.checkNow())
+
+  ipcMain.handle('kernel:autoUpdateStatus', () => autoUpdater.snapshot())
+
+  ipcMain.handle('kernel:setAutoUpdate', (_event, { enabled } = {}) => {
+    config.write({ kernel: { autoUpdate: !!enabled } })
+    autoUpdater.setEnabled(!!enabled)
+    return autoUpdater.snapshot()
+  })
+
+  sendAutoUpdateState()
+
+  /**
+   * 下载并安装一个内核版本，可选随后启用。
+ *
+ * 手工点「下载并安装」与自动更新共用这一个函数 —— 两条路径一旦分开写，
+ * 迟早有一边漏掉「先启动、再写配置」这条铁律。
+ *
+ * @param {string} version 'latest' 或精确版本号
+ * @param {object} [opts]
+ * @param {boolean} [opts.activate] 装完是否切换过去
+ * @param {string} [opts.trigger] manual | auto，仅用于历史记录
+ * @param {(p: object) => void} [opts.onProgress]
+ */
+async function installKernelVersion(version, { activate = true, trigger = 'manual', onProgress } = {}) {
+  const emit = onProgress || sendKernelProgress
+  // 'latest' is a valid dist-tag; a concrete version must be a real semver.
     // Reject path separators and ranges up front — they can never be a snapshot
     // directory and would otherwise be sent verbatim to the registry client.
     const safeVersion = assertVersion(version, { allowTag: true })
@@ -988,7 +1065,7 @@ function registerIpc() {
       })
 
       if (activate) {
-        sendKernelProgress({ phase: 'restart', label: '正在切换到新内核…', percent: 99 })
+        sendKernelProgress({ phase: 'restart', label: '正在切换运行内核…', percent: 99 })
         const wasRunning = !!launcher.child
         let url
         if (wasRunning) {
@@ -1000,19 +1077,53 @@ function registerIpc() {
           url = await launcher.start(registry.inspect(result.version))
           registry.setCurrent(result.version)
         }
-        plugins.recordHistory({ action: 'update', from: before, to: result.version })
+        if (mainWindow && url) mainWindow.loadURL(url)
+        plugins.recordHistory({
+          action: trigger === 'auto' ? 'auto-update' : 'update',
+          from: before,
+          to: result.version
+        })
         plugins.syncKernelSnapshots()
         sendKernelProgress({ phase: 'done', label: '完成', percent: 100, url })
-        return { ...kernelStatus(), url, result }
+        return { ...kernelStatus(), url, result, version: result.version }
       }
 
       plugins.recordHistory({ action: 'install', from: before, to: before })
       plugins.syncKernelSnapshots()
-      return { ...kernelStatus(), result }
+      return { ...kernelStatus(), result, version: result.version }
     } catch (err) {
-      plugins.recordHistory({ action: 'update', from: before, to: version, ok: false, note: err.message })
+      plugins.recordHistory({
+        action: trigger === 'auto' ? 'auto-update' : 'update',
+        from: before,
+        to: version,
+        ok: false,
+        note: err.message
+      })
       sendKernelProgress({ phase: 'failed', label: '更新失败', percent: 100, message: err.message })
       throw err
+    }
+  }
+
+  /**
+   * registry 上可下载的版本列表。
+   *
+   * 界面要「先选版本、再点下载」，就必须能看到**还没装过**的版本；本地快照
+   * 列表（kernel:listVersions）在首次使用时是空的，光靠它选不出任何东西。
+   * 网络失败时不抛错——离线也要能看本地快照，只是拉不到远端列表。
+   */
+  ipcMain.handle('kernel:remoteVersions', async () => {
+    try {
+      return await kernelManager.listRemoteVersions()
+    } catch (err) {
+      return {
+        registry: config.read().kernel.registry,
+        latest: null,
+        distTags: {},
+        current: registry.currentVersion,
+        total: 0,
+        items: [],
+        error: err.message
+      }
     }
   })
 
@@ -1217,6 +1328,10 @@ if (gotLock) {
       }, 8000)
     }
 
+    // 内核自动更新：启动 30s 后检查一次，之后每 6 小时一次。
+    // 放在 boot() 之前启动也没关系——它的首次检查刻意延后，等内核先跑起来。
+    if (autoUpdater) autoUpdater.start()
+
     boot().catch((err) => {
       // boot() resolves the kernel before creating the window, so a throw here
       // is a genuine boot failure with nowhere to report it but the console —
@@ -1235,6 +1350,8 @@ if (gotLock) {
   // 释放跨版本锁。放在 will-quit（而不是 before-quit）是因为 before-quit 里
   // 可能被 preventDefault 拦下来去收进程树 —— 那时候还不能算退出。
   app.on('will-quit', () => {
+    // 停掉自动更新的定时器，否则进程会被挂着不退。
+    if (autoUpdater) autoUpdater.stop()
     if (crossEditionLockPath) {
       releaseInstanceLock(crossEditionLockPath)
       crossEditionLockPath = null

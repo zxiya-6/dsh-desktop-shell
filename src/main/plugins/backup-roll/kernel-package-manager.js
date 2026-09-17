@@ -31,6 +31,8 @@ const path = require('node:path')
 const isWindows = process.platform === 'win32'
 
 const { paths } = require('../../paths')
+const { withPnpmPath, ensureShims } = require('../../env')
+const { compareSemver } = require('./semver')
 const { RegistryClient, PACKAGE_NAME } = require('./registry-client')
 const { findFreePort, waitUntilServing, URL_PATTERN, KERNEL_ARGS } = require('../../dsh-launcher')
 const { assertSnapshotVersion } = require('./validate')
@@ -114,10 +116,20 @@ function killTree(child, timeoutMs = 8000) {
 }
 
 function runPnpm(args, cwd, { env, onOutput, timeoutMs = 20 * 60 * 1000 } = {}) {
+  // 依赖的构建脚本会在子 shell 里直接唤 `node`，而打包环境里系统 PATH 通常
+  // 没有 node：不先写出 node shim，安装会一路顺利到 502/502，然后在
+  // node-pty / koffi / protobufjs 的 install 脚本上全线 `node: not found`。
+  try {
+    ensureShims()
+  } catch (err) {
+    console.warn('[kernel] 写命令 shim 失败，安装脚本可能缺少 node：', err.message)
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [paths.pnpmBin(), ...args], {
       cwd,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(env || {}) },
+      // withPnpmPath 把 shim 目录（含 node shim）放到 PATH 最前面：依赖的构建
+      // 脚本会在子 shell 里唤 `node`，而打包环境里系统 PATH 并没有 node。
+      env: withPnpmPath({ ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(env || {}) }),
       stdio: ['ignore', 'pipe', 'pipe'],
       // POSIX 下 detached 让 pnpm 成为独立进程组，killTree 才能用 -pid 连其
       // 派生的构建脚本（node-pty 等）一起杀掉；Windows 走 taskkill /T，不需要。
@@ -229,6 +241,70 @@ class KernelPackageManager {
       currentVersion: this.config.read().kernel.currentVersion,
       mode: this.config.read().kernel.mode,
       items: this.registry.listSnapshots()
+    }
+  }
+
+  /**
+   * registry 上已发布的内核版本，供界面「先选版本、再点下载」。
+   *
+   * 与 listAvailable() 的区别：那个列的是**本地快照**（已经装好的），这个列的
+   * 是**远端可下载**的版本。只给本地快照的话，用户第一次使用、或想装某个
+   * 旧版本时，界面上根本没有任何可选项。
+   *
+   * 只回传最近 N 个：dsh 的 rc/alpha 发得很密，全量几百个版本塞进下拉框既卡
+   * 又没人用。但「已安装 / 当前」的版本即使排在很后面也一定保留，否则用户
+   * 会以为自己正在用的版本凭空消失了。
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.limit] 最多返回多少个版本
+   */
+  async listRemoteVersions({ limit = 40 } = {}) {
+    // 镜像地址可能刚被改过：每次都按当前配置重建 client，避免拿着旧地址查。
+    this.syncRegistry()
+    const doc = await this.client.packument()
+    const distTags = doc['dist-tags'] || {}
+    const times = doc.time || {}
+
+    // dist-tag → 版本的反查表，用来在下拉框里标出「latest / next / alpha」。
+    const tagOf = {}
+    for (const tag of Object.keys(distTags)) {
+      tagOf[distTags[tag]] = tag
+    }
+
+    const snapshots = this.registry.listSnapshots() || []
+    const installed = new Set(
+      snapshots.map((it) => it && (it.dirVersion || it.version)).filter(Boolean)
+    )
+    const current = this.config.read().kernel.currentVersion || null
+
+    const all = Object.keys(doc.versions || {}).map((version) => ({
+      version,
+      publishedAt: times[version] || null,
+      prerelease: /-/.test(version),
+      tag: tagOf[version] || null,
+      engines: doc.versions[version].engines || null,
+      dependencies: doc.versions[version].dependencies
+        ? Object.keys(doc.versions[version].dependencies).length
+        : 0,
+      installed: installed.has(version),
+      current: version === current
+    }))
+
+    all.sort((a, b) => compareSemver(b.version, a.version))
+    const head = all.slice(0, Math.max(1, Number(limit) || 40))
+    // 已装过的版本有可能排在 limit 之外，补回来以免界面显示不全。
+    const kept = new Set(head.map((it) => it.version))
+    for (const item of all) {
+      if (!kept.has(item.version) && (item.installed || item.current)) head.push(item)
+    }
+
+    return {
+      registry: this.client.registry,
+      latest: distTags.latest || null,
+      distTags,
+      current,
+      total: all.length,
+      items: head
     }
   }
 

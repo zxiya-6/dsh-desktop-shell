@@ -129,7 +129,16 @@ function commonChecks(value, label) {
     return { ok: false, code: 'ROOT', reason: '不能直接使用磁盘根目录' }
   }
   for (const root of protectedRoots()) {
-    if (samePath(value, root) || isSubPath(value, root)) {
+    // POSIX 的受保护列表里带 "/"，而文件系统根是所有路径的祖先：
+    // 若在这里也走 isSubPath，任何绝对路径都会被判成「在系统目录下」，
+    // Linux 上就再也选不出一个合法目录（Windows 没有这个问题，因为它的
+    // 受保护项都是具体目录，如 C:\Windows）。所以根只对「等于」生效，
+    // 「在根下」由上面的 ROOT 检查表达。
+    const isFsRoot = path.parse(root).root === root
+    if (samePath(value, root)) {
+      return { ok: false, code: 'PROTECTED', reason: `不能放在系统目录下（${root}），重装系统会一并带走` }
+    }
+    if (!isFsRoot && isSubPath(value, root)) {
       return { ok: false, code: 'PROTECTED', reason: `不能放在系统目录下（${root}），重装系统会一并带走` }
     }
   }

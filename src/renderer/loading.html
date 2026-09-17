@@ -133,6 +133,32 @@
       button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
       button.primary:hover { background: #3d6bf5; }
       .hint { margin-top: 26px; font-size: 12px; color: #6b7480; line-height: 1.7; }
+      /* 版本选择：让用户在下载前自己挑一个内核版本，而不是只能装 latest */
+      .ver-pick {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+      }
+      .ver-pick label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+      .ver-pick select {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-family: inherit;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+      }
+      .ver-hint { margin-top: -2px; font-size: 12px; color: #6b7480; min-height: 18px; }
+      .ver-hint.err { color: var(--error); }
     </style>
   </head>
   <body data-page-node-id="k3CNzCvd4wbyszIZXKso52">
@@ -153,6 +179,14 @@
       <div data-page-node-id="JKMIpPr5rCBI4ZfbIpDm9h" class="error-box" id="errorBox">
         <div data-page-node-id="WyMn5KncVZhAZfKul2eM8a" class="error-title"><!--pnid:V7PRVPc5F0gXoTdtHiL4B0-->启动失败</div>
         <div data-page-node-id="Ue8wKCRDnAMag7DIXK2mIV" class="error-detail" id="errorDetail"></div>
+        <div data-page-node-id="LdActionsVer" class="actions">
+          <div data-page-node-id="LdVerPick" class="ver-pick">
+            <label data-page-node-id="LdVerLabel" for="kernelVersion">内核版本</label>
+            <select data-page-node-id="LdVerSel" id="kernelVersion" aria-label="要下载的内核版本"></select>
+            <button data-page-node-id="LdVerRefresh" id="refreshVersions" type="button">刷新</button>
+          </div>
+        </div>
+        <div data-page-node-id="LdVerHint" class="ver-hint" id="versionHint"></div>
         <div data-page-node-id="wFPWsZggP5sdzpfgmTviuB" class="actions">
           <button data-page-node-id="rZiIQE0WKQQXm4Q5mrEZsA" class="primary" id="retryBtn"><!--pnid:T7VPYc4WW72rzj3zdvRSLh-->重试</button>
           <button data-page-node-id="9SbXZ0l5x75ipIC4rGA3Jv" id="installBtn"><!--pnid:BaWwbdN71iUf7iKXVVM2Xu-->安装 / 更新内核</button>
@@ -201,6 +235,67 @@
         if (p.output) appendOutput(p.output)
       }
 
+      /**
+       * 远端版本列表 → 下拉框。
+       *
+       * 首次启动时本地一个快照都没有，以前只能盲目装 latest；现在让用户先选
+       * 版本再下载。拉不到列表（离线 / 镜像不可达）时退化为「latest（最新稳定版）」
+       * 一个选项，安装流程照旧能走通——绝不能因为拿不到列表就装不了内核。
+       */
+      async function loadVersions() {
+        const sel = document.getElementById('kernelVersion')
+        const hint = document.getElementById('versionHint')
+        const refreshBtn = document.getElementById('refreshVersions')
+        if (!api || !api.kernel || typeof api.kernel.remoteVersions !== 'function') {
+          hint.className = 'ver-hint err'
+          hint.textContent = '当前版本不支持选择内核版本，将安装 latest。'
+          return
+        }
+        refreshBtn.disabled = true
+        hint.className = 'ver-hint'
+        hint.textContent = '正在从镜像源拉取可用版本…'
+
+        const fallback = () => {
+          sel.innerHTML = ''
+          const op = document.createElement('option')
+          op.value = 'latest'
+          op.textContent = 'latest（最新稳定版）'
+          sel.appendChild(op)
+          sel.disabled = false
+          hint.className = 'ver-hint err'
+          hint.textContent = '未能获取版本列表，将安装 latest。可点「刷新」重试。'
+          refreshBtn.disabled = false
+        }
+
+        try {
+          const res = await api.kernel.remoteVersions()
+          const items = (res && Array.isArray(res.items) && res.items) || []
+          if (res && res.error) throw new Error(res.error)
+          if (!items.length) throw new Error('镜像源上没有查到已发布版本')
+
+          sel.innerHTML = ''
+          for (const it of items) {
+            const op = document.createElement('option')
+            op.value = it.version
+            const marks = []
+            if (it.tag) marks.push(it.tag)
+            if (it.current) marks.push('当前')
+            else if (it.installed) marks.push('已安装')
+            op.textContent = it.version + (marks.length ? `（${marks.join('·')}）` : '')
+            sel.appendChild(op)
+          }
+          const latest = res.latest
+          if (latest && items.some((it) => it.version === latest)) sel.value = latest
+          sel.disabled = false
+          hint.className = 'ver-hint'
+          hint.textContent = `共 ${res.total || items.length} 个已发布版本，显示最近 ${items.length} 个；选中后点「安装 / 更新内核」。`
+        } catch (err) {
+          fallback()
+        } finally {
+          refreshBtn.disabled = false
+        }
+      }
+
       function showError(text) {
         spinner.style.display = 'none'
         errorBox.classList.add('visible')
@@ -237,28 +332,47 @@
         }
       }
 
-      if (api && typeof api.onStatus === 'function') {
-        api.onStatus((status) => {
-          if (!status) return
-          if (status.state === 'starting') {
-            spinner.style.display = 'block'
-            message.textContent = status.detail || '正在启动…'
-          } else if (status.state === 'ready') {
-            showProgress(false)
-            message.textContent = '已就绪，正在载入界面…'
-          } else if (status.state === 'kernel-missing') {
-            // Nothing to boot. Offer the install instead of a dead retry loop.
-            showError(
-              `${status.detail || '尚未安装 Harness 内核'}\n\n` +
-                '首次使用需要下载内核（约 500 个依赖包，数分钟）。'
-            )
-            document.querySelector('#errorBox .error-title').textContent = '需要安装内核'
-          } else if (status.state === 'error') {
-            showError(status.detail || '未知错误')
+      let versionsLoaded = false
+
+      /**
+       * 状态既能被推送、也能被首屏拉一次（dsh:getStatus），所以收敛成一个函数，
+       * 两条来源走同一套处理，避免两处各写一遍又写歪。
+       */
+      function applyStatus(status) {
+        if (!status || !status.state) return
+        if (status.state === 'starting') {
+          spinner.style.display = 'block'
+          message.textContent = status.detail || '正在启动…'
+        } else if (status.state === 'ready') {
+          showProgress(false)
+          message.textContent = '已就绪，正在载入界面…'
+        } else if (status.state === 'kernel-missing') {
+          // Nothing to boot. Offer the install instead of a dead retry loop.
+          showError(
+            `${status.detail || '尚未安装 Harness 内核'}\n\n` +
+              '首次使用需要下载内核（约 500 个依赖包，数分钟）。'
+          )
+          document.querySelector('#errorBox .error-title').textContent = '需要安装内核'
+          // 没有本地快照可列，只能去远端拉——让用户自己挑一个版本再下载。
+          if (!versionsLoaded) {
+            versionsLoaded = true
+            loadVersions()
           }
-        })
+        } else if (status.state === 'error') {
+          showError(status.detail || '未知错误')
+        }
+      }
+
+      if (api && typeof api.onStatus === 'function') {
+        api.onStatus(applyStatus)
       } else {
         message.textContent = '等待主进程…'
+      }
+
+      // boot 可能在页面加载完之前就结束了，那时推送早已发过 —— 主动拉一次当前
+      // 状态，否则页面会一直停在「正在初始化…」，连「安装内核」按钮都不出现。
+      if (api && typeof api.getStatus === 'function') {
+        api.getStatus().then(applyStatus).catch(() => {})
       }
 
       if (api && typeof api.kernel?.onProgress === 'function') {
@@ -276,7 +390,12 @@
         }
       })
 
-      document.getElementById('installBtn').addEventListener('click', () => installKernel('latest'))
+      document.getElementById('installBtn').addEventListener('click', () => {
+        const sel = document.getElementById('kernelVersion')
+        // 选不到就用 latest：下拉框在离线时会退化成这一个选项。
+        installKernel((sel && sel.value) || 'latest')
+      })
+      document.getElementById('refreshVersions').addEventListener('click', () => loadVersions())
       document.getElementById('kernelBtn').addEventListener('click', () => api.openKernel())
 
       document.getElementById('logBtn').addEventListener('click', async () => {

@@ -51,7 +51,16 @@ function requestJson(url, { timeout = 20000, redirects = 5 } = {}) {
     })
 
     req.setTimeout(timeout, () => req.destroy(new Error(`请求超时（${timeout}ms）：${url}`)))
-    req.on('error', reject)
+    // 裸的 AggregateError（Happy Eyeballs 把 IPv4/IPv6 的失败都塞进去了）到了
+    // 界面上就只剩一句「AggregateError」，用户根本不知道是网络不通还是地址写错。
+    // 这里补上 URL 与底层错误码，让「装不上内核」至少能自己定位。
+    req.on('error', (err) => {
+      if (err && (err.message || '').includes(url)) return reject(err)
+      const codes = Array.isArray(err?.errors)
+        ? err.errors.map((e) => e?.code || e?.message).filter(Boolean).join(', ')
+        : ''
+      reject(new Error(`请求 registry 失败（${url}）：${codes || err?.code || err?.message || '未知错误'}`))
+    })
   })
 }
 

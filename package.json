@@ -5,6 +5,7 @@
   "main": "src/main/index.js",
   "author": "DSH Desktop",
   "license": "MIT",
+  "homepage": "https://github.com/zxiya-6/dsh-desktop-shell",
   "private": true,
   "engines": {
     "node": ">=22.19.0"
@@ -25,6 +26,7 @@
     "smoke:migrate": "node scripts/smoke-migrate.js",
     "smoke:paths": "node scripts/smoke-paths.js",
     "smoke:lock": "node scripts/smoke-lock.js",
+    "smoke:autoupdate": "electron scripts/smoke-autoupdate.js",
     "dist:win": "electron-builder --win --x64",
     "dist:dir": "electron-builder --win --x64 --dir",
     "dist:linux": "electron-builder --linux --x64"
@@ -98,7 +100,8 @@
       ],
       "category": "Utility",
       "maintainer": "DSH Desktop",
-      "artifactName": "DSH-Desktop-${version}-linux-${arch}.${ext}"
+      "artifactName": "DSH-Desktop-${version}-linux-${arch}.${ext}",
+      "syncDesktopName": true
     }
   }
 }

@@ -50,7 +50,9 @@
 | 6 | 内核侧僵尸锁导致「双击打不开」 | **已完成**：task-board 会在 `dsh-home/task-board/ledger-v2.lock` 记下自己的 pid，进程被强杀后锁不会消失，下次启动内核直接报 `ledger is already owned by process <pid>` 并退出。`boot()` 现在会在拉起内核前调 `clearStaleLock()`：pid 已死就删，还活着绝不动 |
 | 7 | 内核切换「非常容易卡死然后崩掉」 | **已完成**：三个根因叠在一起——① 杀进程树用 `execSync('taskkill')`，**同步阻塞主进程事件循环**，切换期间 UI/IPC/心跳全停；② `switchTo()` 无重入保护，并发时两次 `stop`/`start` 互踩，写乱 `config.json`；③ 全程无进度反馈，用户只能反复点。已改为异步 `killTreeAsync()` + `#exclusive` 重入锁（忙则抛 `KERNEL_BUSY`）+ `switch-progress` 广播。详见第 2.9 节 |
 | 8 | 一键重启并重连内核 | **已完成**：`Ctrl + K` 面板「操作」区按钮 **「重启并重连内核」**（`btnRestart`）。链路 `ipcMain.handle('dsh:restart')` → `launcher.restart()` → `mainWindow.loadURL(url)`。端口每次随机，**不重连就会停在旧地址上**，所以这一步不能省 |
-| 9 | Linux 跨平台兼容 | **已完成（产物未真机验证）**：POSIX 下 spawn 一律 `detached: true`，杀树走进程组 `process.kill(-pgid, 'SIGTERM')` → 超时 `SIGKILL`（直接 `child.kill()` 只杀直接子进程，dsh 的插件孙进程会变孤儿占着端口）；`package.json` 新增 `linux` 目标（AppImage + deb）与 `npm run dist:linux`。Linux 包**只能在 Linux 主机上构建**，见第二节 |
+| 9 | Linux 跨平台兼容 | **已完成（0.1.2 已在 Linux x64 真机出包并跑通）**：POSIX 下 spawn 一律 `detached: true`，杀树走进程组 `process.kill(-pgid, 'SIGTERM')` → 超时 `SIGKILL`（直接 `child.kill()` 只杀直接子进程，dsh 的插件孙进程会变孤儿占着端口）；`package.json` 新增 `linux` 目标（AppImage + deb）与 `npm run dist:linux`。Linux 包**只能在 Linux 主机上构建**，见第二节 |
+| 10 | 可选版本下载内核 | **已完成**：新增 `kernel:remoteVersions`（远端版本列表）+ 启动页 / 内核面板的版本下拉框，选中后走同一条「暂存 → 校验 → 冒烟 → 原子提升」流水线下载安装，详见第 2.5.1 节 |
+| 11 | 内核自动检查更新并拉取安装 | **已完成**：`kernel-auto-update.js`，启动后 30s + 每 6 小时 + 手动触发，按语义化版本比对 dist-tag `latest`，复用同一条安装流水线，失败退避重试且当前内核不变；规则 25/25（`npm run smoke:autoupdate`），详见第 2.5.2 节 |
 
 ### 接手必读：六条不变量
 
@@ -125,6 +127,49 @@ dsh 本体**不再打进安装包**，而是当作一个可更新的「内核」
 | 失败自愈 | 切换失败会把指针写回原版本并尝试重启原内核 |
 
 界面入口：`Ctrl + K`（或菜单「内核 → 内核管理」）。内核缺失时启动页会直接给出「安装内核」按钮。
+
+### 2.5.1 选择版本并下载内核
+
+dsh 一个月发 20 个版本，只装 `latest` 不够用——有时要回退到某个已验证的 rc，
+有时要提前试 `next`。所以界面上可以直接**挑一个版本再下载**：
+
+| 位置 | 交互 |
+|---|---|
+| 启动页（内核缺失时） | 「内核版本」下拉框列出镜像源上已发布的版本，选好点「安装 / 更新内核」 |
+| 内核管理面板第 2 节 | 「远端可下载版本」下拉框 + 「刷新列表」 + 「下载并安装」 |
+
+- 列表来自 `KernelPackageManager.listRemoteVersions()`（读 registry 的 packument），
+  按版本号倒序，标出 `latest` / `next` 等 dist-tag 与「已安装 / 当前」；
+  为免下拉框被几百个历史版本塞爆，**只回最近 40 个**，但已安装与当前版本一定保留。
+- 下载走的仍是 2.5 那条流水线（暂存 → 校验 → 冒烟 → 原子提升），
+  选中一个**已经装过**的版本时会识别本地缓存直接启用，不重复下载。
+- 拉不到列表（离线 / 镜像不可达）**不算失败**：启动页退化成 `latest` 一个选项，
+  面板只在这一区提示原因，已装内核照常可用。
+
+### 2.5.2 内核自动更新（触发 / 来源 / 比对 / 流程 / 失败 / 提示）
+
+dsh 一个月发 20 个版本，靠人手点不现实。自动更新全部收在
+`src/main/plugins/backup-roll/kernel-auto-update.js`，规则由
+`scripts/smoke-autoupdate.js` 钉死（25 条用例）。
+
+| 问题 | 结论 |
+|---|---|
+| **触发方式** | ① 启动后 30s 自动检查一次；② 之后每 **6 小时**定时检查；③ 面板「立即检查」手动触发（60s 内连点忽略）；④ 失败后按 **5 / 15 / 45 分钟**退避重试 |
+| **更新来源** | `config.kernel.registry`（默认 npmmirror）上的 **dist-tag `latest`**；不是 GitHub Release，与桌面壳自身的 `electron-updater` 是两条独立链路 |
+| **比对规则** | 语义化版本（`semver.js`，不引三方依赖）：`1.0.10 > 1.0.9`、正式版 > 同 core 的 rc。目标 > 当前才更新 |
+| **拉取与更新流程** | 复用 2.5 那条流水线：**暂存 → 下载依赖 → 校验入口与版本 → 预启动冒烟 → 原子提升为快照 → 切换**；手工「下载并安装」走的是同一个函数 |
+| **替换与回滚** | 只有冒烟通过（真的启动并响应 HTTP）才写 `config.json`；失败则删除 staging，**当前内核分毫未动**，可用面板回滚到任意 `ready` 快照 |
+| **失败处理** | 网络类（ETIMEDOUT / ENOTFOUND / ECONNRESET / 请求超时）→ 退避重试；校验失败、冒烟失败、权限不足 → **不自动重试**，只记录并提示；任务进行中 → 返回 `busy`，不排队死等 |
+| **用户提示** | 内核面板第 2 节：开关 + 「最近检查 / 结果 / 下次检查」+「立即检查」；更新过程有 `kernel:progress` 进度与阶段文案 |
+| **日志记录** | 主进程 `[kernel:auto]` 前缀（触发来源、远端版本、决策、失败原因）；每次更新写入 `plugin-manifest.json` 的 `history`（`action: auto-update` 或 `update`，含 `from → to`） |
+| **静默还是确认** | **默认静默自动更新**——因为内核必须先冒烟通过才会被启用，静默并不等于「可能装坏」；把开关关掉即退化为「只检查、只提示」，装不装由人点按钮决定 |
+
+刻意**不**自动做的几件事（都会转为「提示 + 等人工确认」）：
+
+- 远端 `latest` 比当前更旧 → 不自动降级
+- 当前是正式版、目标是预发布 → 不自动跳
+- 预发布通道变化（`rc` → `alpha`）→ 不自动跳
+- `mode: pinned`（固定版本）→ 只报告，不切换
 
 ### 2.6 旧版本迁移（内置 dsh → 快照）
 
@@ -349,9 +394,20 @@ npm run dist:linux     # AppImage + deb，输出在 dist/
 ```
 
 > Linux 包必须在 Linux 主机上构建（同上，`node-pty` 不能交叉编译）。
-> **Linux 产物目前尚未在真机上运行验证**：`package.json` 已配好 `linux` 目标（AppImage + deb），
-> 代码里的平台分支（POSIX 进程组杀树、`detached: true` 的 spawn、`app.getPath('appData')` 取值）
-> 也都按 POSIX 语义改过，但还没有真出过包、真跑过一次。见第七节已知限制。
+
+**已完成真机验证**（UOS Desktop 25 / Debian 系，x86_64，Node 24.14）。实测结论：
+
+| 项 | 结果 |
+|---|---|
+| `npm install` + 出包 | AppImage（约 129 MB）+ deb（约 102 MB）均成功；`node-pty` 需 `g++`（用 `python3 make g++` 从源码构建） |
+| 启动与沙箱 | 直接运行即可，**无需 `--no-sandbox`**（普通用户下 Chromium 沙箱正常工作） |
+| 数据目录 / 单实例锁 | `~/.config/dsh-desktop/` 按 README 第 2 节结构创建；`~/.config/dsh-desktop-shell/instance.lock` 生效，二次启动自动退出 |
+| 内核下载与启动 | 走 `KernelPackageManager` 实装 `0.1.5-rc.1`（约 500 个依赖），内核起在随机回环端口并解析出 token |
+| 终端 | `node-pty` 在 Linux Electron 44 下加载正常（N-API，无需 `npmRebuild`），shell 识别为 `/bin/bash` |
+| 纯 node 冒烟 | `smoke:migrate` 18/18、`smoke:paths` 40/40、`smoke:lock` 34/34 |
+
+构建期唯一告警是 `desktopName` 未设置（不影响运行）；deb 目标要求 `package.json`
+必须带 `homepage`，已补上。AppImage 需要 FUSE（本机自带，可直接 `./xxx.AppImage` 运行）。
 
 ---
 
@@ -611,10 +667,13 @@ spawn 时设 `detached: true` 让子进程自成进程组（此时 `pgid === pid
 
 ## 七、已知限制
 
-- **Windows x64 与 Linux x64 都已支持，但只有 Windows 真机验证过。**
+- **Windows x64 与 Linux x64 均已支持并真机验证过。**
   Windows：0.1.2 的 NSIS 安装包与绿色版均已实机跑通（含 `node-pty` 终端、`asar` 内代码校验）。
-  Linux：已配 `AppImage` + `deb` 目标、平台分支已按 POSIX 语义改好，但**尚未在 Linux 主机上出包并运行验证**，
-  且 Linux 包只能在 Linux 主机上构建（见第二节）。官方 Harness 桌面端同样未将 Linux 列入发布目标。
+  Linux：0.1.2 已在 Linux x64 主机上出包（AppImage + deb）并跑通启动、内核下载、内核启动与终端，
+  详见第二节 Linux 小节的实测表。**以 root 运行、Docker 容器内运行这两项仍未验证**，
+  若在你的环境下起不来，可在 `app.whenReady()` 前加 `app.commandLine.appendSwitch('no-sandbox')`
+  （建议只在 Linux 且 `process.getuid?.() === 0` 时加，别无脑全局关沙箱）。
+  Linux 包只能在 Linux 主机上构建（见第二节）。官方 Harness 桌面端同样未将 Linux 列入发布目标。
 - 内核切换 / 重启期间再发起同类操作会被 `KERNEL_BUSY` 拒绝（UI 提示「请稍候再试」）。这是刻意的设计，不是缺陷——见第 2.9 节。
 - dsh 仍是 `0.1.x-rc` 开发者预览版，一个月发 20 个版本，**必须锁版本**（当前 `0.1.5-rc.1`）。
   内核管理面板可以列出和切换已安装版本，但**不会自动跳到未经验证的 rc**。

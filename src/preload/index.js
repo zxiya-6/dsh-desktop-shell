@@ -42,6 +42,33 @@ const kernel = {
   checkLatest: () => ipcRenderer.invoke('kernel:checkLatest'),
 
   /**
+   * 远端可下载的版本列表（带「已安装 / 当前」标记）。
+   * 失败不抛错，返回 `{ items: [], error }` —— 离线时本地快照仍要看得到。
+   */
+  remoteVersions: () => ipcRenderer.invoke('kernel:remoteVersions'),
+
+  /* ---- 自动更新 ---- */
+
+  /**
+   * 手动立刻检查一次（装不装取决于「自动更新」开关）。
+   * @returns {Promise<{result: string, reason?: string, from?: string, to?: string}>}
+   */
+  checkNow: () => ipcRenderer.invoke('kernel:checkNow'),
+
+  /** 最近一次检查时间 / 结果 / 下次检查时间 / 开关状态。 */
+  autoUpdateStatus: () => ipcRenderer.invoke('kernel:autoUpdateStatus'),
+
+  /** 开关：只决定「查到新版本后是否自动安装」，定时检查照常跑。 */
+  setAutoUpdate: (enabled) => ipcRenderer.invoke('kernel:setAutoUpdate', { enabled }),
+
+  /** 主进程推来的自动更新状态（kernel:autoUpdate）。 */
+  onAutoUpdate: (callback) => {
+    const listener = (_event, value) => callback(value)
+    ipcRenderer.on('kernel:autoUpdate', listener)
+    return () => ipcRenderer.removeListener('kernel:autoUpdate', listener)
+  },
+
+  /**
    * Download + smoke test + promote. Returns only at the end; progress arrives
    * through onProgress because an install is ~1-2 minutes, not a round trip.
    */
