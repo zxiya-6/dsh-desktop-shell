@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="./README.md">中文</a> · <a href="./README_EN.md">English</a>
+</p>
+
 # DSH Desktop
 
 把 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 封装成一个开箱即用的桌面应用（**Windows / Linux**）：
